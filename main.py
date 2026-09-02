@@ -201,12 +201,15 @@ def post_to_naver(driver, title, content):
         print(f"Failed to post to Naver: {e}")
         print(f"Current URL at failure: {driver.current_url}")
         
-        # Dump HTML source for debugging
-        with open("error_page.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
+        print("\n--- [페이지 텍스트 내용] ---")
+        try:
+            print(driver.find_element(By.TAG_NAME, "body").text[:1000])
+        except:
+            print("(텍스트 추출 실패)")
             
-        driver.save_screenshot("error_screenshot.png")
-        print("에러 화면이 error_screenshot.png 로, 페이지 소스가 error_page.html로 저장되었습니다!")
+        print("\n--- [페이지 소스 (일부)] ---")
+        print(driver.page_source[:2000])
+        
         import sys
         sys.exit(1)
 
