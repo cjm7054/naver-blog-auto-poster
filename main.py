@@ -207,6 +207,8 @@ def post_to_naver(driver, title, content):
             
         driver.save_screenshot("error_screenshot.png")
         print("에러 화면이 error_screenshot.png 로, 페이지 소스가 error_page.html로 저장되었습니다!")
+        import sys
+        sys.exit(1)
 
 def init_driver():
     options = webdriver.ChromeOptions()
