@@ -234,6 +234,7 @@ def post_to_naver(driver, title, content):
 
 def init_driver():
     options = webdriver.ChromeOptions()
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("--start-maximized")
     options.add_argument("--disable-blink-features=AutomationControlled")
     
