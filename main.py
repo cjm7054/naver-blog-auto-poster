@@ -229,6 +229,13 @@ def post_to_naver(driver, title, content):
         print("\n--- [페이지 소스 (일부)] ---")
         print(driver.page_source[:2000])
         
+        # Dump HTML source for debugging
+        with open("error_page.html", "w", encoding="utf-8") as f:
+            f.write(driver.page_source)
+            
+        driver.save_screenshot("error_screenshot.png")
+        print("에러 화면이 error_screenshot.png 로, 페이지 소스가 error_page.html로 저장되었습니다!")
+        
         import sys
         sys.exit(1)
 
