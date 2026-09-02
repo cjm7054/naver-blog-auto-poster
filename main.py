@@ -154,7 +154,22 @@ def post_to_naver(driver, title, content):
             pass
         
         # 4. Enter Title
-        title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".se-title-text, .se-documentTitle, span.se-placeholder")))
+        # 네이버 스마트에디터 ONE의 클래스명이 유동적이므로, contenteditable 속성으로 첫번째 입력창(제목)을 찾습니다.
+        try:
+            content_editables = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "[contenteditable='true']")))
+            if len(content_editables) >= 2:
+                title_element = content_editables[0]
+                body_element = content_editables[1]
+            else:
+                # 못 찾았을 경우 대비용 백업 셀렉터
+                title_element = driver.find_element(By.CSS_SELECTOR, ".se-title-text, .se-documentTitle")
+                body_element = None
+        except Exception as e:
+            print("contenteditable 요소를 찾지 못했습니다. 백업 셀렉터를 시도합니다.")
+            title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".se-title-text, .se-documentTitle, span.se-placeholder")))
+            body_element = None
+            
+        print("제목 입력창을 찾았습니다. 클릭 및 내용 입력을 시작합니다.")
         ActionChains(driver).move_to_element(title_element).click().perform()
         time.sleep(1)
         
@@ -168,8 +183,12 @@ def post_to_naver(driver, title, content):
         time.sleep(1)
         
         # 5. Enter Content
-        # Press TAB to move to the content area
-        ActionChains(driver).send_keys(Keys.TAB).perform()
+        if body_element:
+            ActionChains(driver).move_to_element(body_element).click().perform()
+        else:
+            # Press TAB to move to the content area
+            ActionChains(driver).send_keys(Keys.TAB).perform()
+            
         time.sleep(1)
         
         # Select all and delete old auto-saved text
