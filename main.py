@@ -20,21 +20,15 @@ load_dotenv()
 NAVER_ID = os.getenv('NAVER_ID')
 NAVER_PW = os.getenv('NAVER_PW')
 
-def get_signal_bz_trends():
+def get_signal_bz_trends(driver):
     print("Fetching today's top 10 real-time search trends from Signal.bz...")
-    url = "https://signal.bz/news"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
-    }
     
     try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.text, 'html.parser')
+        driver.get("https://signal.bz/news")
+        time.sleep(3) # Vue.js 렌더링 대기
         
         trends = []
-        rank_elements = soup.select(".rank-text")
+        rank_elements = driver.find_elements(By.CSS_SELECTOR, ".rank-text")
         
         for i, el in enumerate(rank_elements):
             if i >= 10:
@@ -46,9 +40,9 @@ def get_signal_bz_trends():
         print(f"Error fetching Signal.bz trends: {e}")
         return []
 
-def get_blog_post():
+def get_blog_post(driver):
     try:
-        trends = get_signal_bz_trends()
+        trends = get_signal_bz_trends(driver)
         
         if not trends:
             print("트렌드 키워드를 찾지 못했습니다.")
@@ -74,7 +68,7 @@ def get_blog_post():
         print(f"트렌드 데이터를 가져오는 중 오류 발생: {e}")
         return None, None
 
-def post_to_naver(title, content):
+def post_to_naver(driver, title, content):
     print("Posting to Naver Blog...")
     if not NAVER_ID:
         print("Naver ID is not set in .env")
@@ -82,23 +76,6 @@ def post_to_naver(title, content):
         
     NID_AUT = os.getenv("NID_AUT")
     NID_SES = os.getenv("NID_SES")
-    
-    options = webdriver.ChromeOptions()
-    options.add_argument("--start-maximized")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    
-    # 크롬 프로필을 저장하여 로그인 세션을 유지합니다 (로컬 실행 시 캡차 방지)
-    profile_path = os.path.join(os.getcwd(), "chrome_profile")
-    options.add_argument(f"user-data-dir={profile_path}")
-    
-    # GitHub Actions와 같은 환경에서는 headless 모드로 실행해야 합니다.
-    if os.getenv("GITHUB_ACTIONS") == "true":
-        options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-    
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
     wait = WebDriverWait(driver, 15)
 
     try:
@@ -230,13 +207,35 @@ def post_to_naver(title, content):
             
         driver.save_screenshot("error_screenshot.png")
         print("에러 화면이 error_screenshot.png 로, 페이지 소스가 error_page.html로 저장되었습니다!")
-    finally:
-        driver.quit()
+
+def init_driver():
+    options = webdriver.ChromeOptions()
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    
+    # 크롬 프로필을 저장하여 로그인 세션을 유지합니다 (로컬 실행 시 캡차 방지)
+    profile_path = os.path.join(os.getcwd(), "chrome_profile")
+    options.add_argument(f"user-data-dir={profile_path}")
+    
+    # GitHub Actions와 같은 환경에서는 headless 모드로 실행해야 합니다.
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        options.add_argument("--headless=new")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 if __name__ == "__main__":
     print("--- Naver Blog 포스팅 시작 ---")
-    title, content = get_blog_post()
-    if title and content:
-        post_to_naver(title, content)
-    else:
-        print("콘텐츠 생성 실패.")
+    driver = None
+    try:
+        driver = init_driver()
+        title, content = get_blog_post(driver)
+        if title and content:
+            post_to_naver(driver, title, content)
+        else:
+            print("콘텐츠 생성 실패.")
+    finally:
+        if driver:
+            driver.quit()
