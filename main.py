@@ -211,48 +211,77 @@ def post_to_naver(driver, title, content):
         time.sleep(2)
         
         # 6. Click Publish (상단 우측 발행 버튼 클릭)
-        print("상단 '발행' 버튼을 클릭합니다...")
-        publish_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'btn_publish') or contains(., '발행')]")))
-        driver.execute_script("arguments[0].click();", publish_btn)
+        print("상단 '발행' 버튼을 찾는 중...")
+        top_publish_btn = None
+        for _ in range(15):
+            candidates = driver.find_elements(By.XPATH, "//button[contains(., '발행')] | //button[contains(@class, 'publish')]")
+            for btn in candidates:
+                try:
+                    if btn.is_displayed():
+                        top_publish_btn = btn
+                        break
+                except Exception:
+                    continue
+            if top_publish_btn:
+                break
+            time.sleep(1)
+            
+        if not top_publish_btn:
+            raise Exception("상단 '발행' 버튼을 찾을 수 없습니다.")
+            
+        print("상단 '발행' 버튼 클릭...")
+        driver.execute_script("arguments[0].click();", top_publish_btn)
         time.sleep(3)
         
         # Confirm publish button (발행 설정 패널 내의 최종 초록색 '발행' 버튼)
-        print("발행 설정 레이어에서 최종 '발행' 버튼을 클릭합니다...")
-        confirm_btn = None
-        confirm_selectors = [
-            "button.confirm_btn",
-            "button[data-action='publish']",
-            "button[class*='btn_confirm']",
-            "button[class*='button_apply']",
-            "button[class*='btn_apply']",
-            ".publish_btn_box button",
-            "div[class*='layer_publish'] button[class*='confirm']",
-            "div[class*='publish_layer'] button[class*='confirm']"
-        ]
-        
-        for c_sel in confirm_selectors:
-            try:
-                btn = driver.find_element(By.CSS_SELECTOR, c_sel)
-                if btn.is_displayed():
-                    confirm_btn = btn
-                    break
-            except Exception:
-                continue
-                
-        if not confirm_btn:
-            # fallback: 화면에 보이는 '발행' 텍스트를 가진 마지막 버튼
-            confirm_btns = driver.find_elements(By.XPATH, "//button[contains(., '발행')]")
-            for btn in reversed(confirm_btns):
-                if btn.is_displayed() and btn != publish_btn:
-                    confirm_btn = btn
+        print("발행 설정 레이어에서 최종 '발행' 확인 버튼을 찾는 중...")
+        final_publish_btn = None
+        for _ in range(15):
+            # 1) 명시적 클래스명 셀렉터로 먼저 시도
+            confirm_selectors = [
+                "button.confirm_btn",
+                "button[data-action='publish']",
+                "button[class*='btn_confirm']",
+                "button[class*='button_apply']",
+                "button[class*='btn_apply']",
+                ".publish_btn_box button",
+                "div[class*='layer_publish'] button",
+                "div[class*='publish_layer'] button"
+            ]
+            for c_sel in confirm_selectors:
+                for btn in driver.find_elements(By.CSS_SELECTOR, c_sel):
+                    try:
+                        if btn.is_displayed() and "발행" in btn.text:
+                            final_publish_btn = btn
+                            break
+                    except Exception:
+                        continue
+                if final_publish_btn:
                     break
                     
-        if confirm_btn:
-            driver.execute_script("arguments[0].click();", confirm_btn)
-            print("네이버 블로그 포스팅이 성공적으로 발행되었습니다! (저장 대기 중...)")
-            time.sleep(10)
-        else:
-            raise Exception("발행 설정 레이어의 최종 '발행' 버튼을 찾지 못했습니다.")
+            if final_publish_btn:
+                break
+                
+            # 2) fallback: 상단 발행 버튼과 다른, 화면에 보이는 '발행' 버튼
+            candidates = driver.find_elements(By.XPATH, "//button[contains(., '발행')]")
+            for btn in reversed(candidates):
+                try:
+                    if btn.is_displayed() and btn != top_publish_btn:
+                        final_publish_btn = btn
+                        break
+                except Exception:
+                    continue
+            if final_publish_btn:
+                break
+            time.sleep(1)
+            
+        if not final_publish_btn:
+            raise Exception("발행 설정 레이어의 최종 '발행' 확인 버튼을 찾을 수 없습니다.")
+            
+        print("최종 '발행' 버튼 클릭...")
+        driver.execute_script("arguments[0].click();", final_publish_btn)
+        print("🎉 네이버 블로그 포스팅이 성공적으로 발행되었습니다! (저장 대기 중...)")
+        time.sleep(10)
         
     except Exception as e:
         import traceback
