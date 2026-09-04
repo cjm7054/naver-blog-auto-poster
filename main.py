@@ -280,28 +280,29 @@ def post_to_naver(driver, title, content):
             raise Exception("발행 설정 레이어의 최종 '발행' 확인 버튼을 찾을 수 없습니다.")
             
         print("최종 '발행' 버튼 클릭...")
-        # ⚠️ scrollIntoView는 패널을 닫아버릴 수 있으므로 절대 사용하지 않습니다.
-        
-        # ActionChains로 마우스 이동 후 클릭
+        clicked_success = False
+        # 1. ActionChains 마우스 클릭 시도
         try:
             ActionChains(driver).move_to_element(final_publish_btn).click().perform()
+            clicked_success = True
         except Exception:
             pass
             
-        # 자바스크립트 click 및 dispatchEvent 동시 실행
-        try:
-            final_publish_btn.click()
-        except Exception:
-            pass
-            
-        driver.execute_script("""
-            const el = arguments[0];
-            el.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window}));
-            el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window}));
-            el.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window}));
-            el.click();
-        """, final_publish_btn)
-        
+        # 2. 실패 시 직접 .click() 시도
+        if not clicked_success:
+            try:
+                final_publish_btn.click()
+                clicked_success = True
+            except Exception:
+                pass
+                
+        # 3. 실패 시 JS click 시도
+        if not clicked_success:
+            try:
+                driver.execute_script("arguments[0].click();", final_publish_btn)
+            except Exception:
+                pass
+                
         # 혹시 모를 브라우저 alert 알림창 자동 승인
         time.sleep(1)
         try:
@@ -311,17 +312,23 @@ def post_to_naver(driver, title, content):
         except Exception:
             pass
             
-        print("발행 요청 완료. 블로그 글 등록 및 페이지 이동 대기 중...")
-        # 발행 완료 후 글 뷰어 페이지(PostView 등)로 리다이렉트될 때까지 최대 20초 대기
+        print("발행 요청 완료. 메인 컨텍스트 복귀 및 페이지 이동 대기 중...")
+        # iframe에서 메인 컨텍스트로 빠져나옵니다.
         try:
-            WebDriverWait(driver, 20).until(
+            driver.switch_to.default_content()
+        except Exception:
+            pass
+            
+        # 발행 완료 후 글 뷰어 페이지(PostView 등)로 리다이렉트될 때까지 최대 30초 대기
+        try:
+            WebDriverWait(driver, 30).until(
                 lambda d: "Redirect=Write" not in d.current_url and "postwrite" not in d.current_url
             )
             print(f"🎉 네이버 블로그 포스팅이 성공적으로 발행되었습니다! 현재 URL: {driver.current_url}")
         except Exception:
-            # 캡처를 남기고 에러를 발생시켜 GitHub Actions에서 원인 스크린샷을 바로 확인할 수 있도록 함
+            # 캡처를 남기고 에러를 발생시켜 원인을 명확히 파악할 수 있도록 함
             print("❌ 페이지 이동 실패 (발행 미완료). 현재 화면을 저장합니다...")
-            raise Exception(f"포스팅 발행 후 페이지 이동 실패! 에디터에 그대로 머물러 있습니다. (현재 URL: {driver.current_url})")
+            raise Exception(f"포스팅 발행 후 페이지 이동 실패! (현재 URL: {driver.current_url})")
             
         time.sleep(5)
         
