@@ -249,9 +249,10 @@ def init_driver():
     profile_path = os.path.join(os.getcwd(), "chrome_profile")
     options.add_argument(f"user-data-dir={profile_path}")
     
-    # GitHub Actions와 같은 환경에서는 headless 모드로 실행해야 합니다.
+    # GitHub Actions(Xvfb 환경)에서 pyperclip을 사용한 클립보드 복사/붙여넣기를 정상 작동시키기 위해 
+    # headless 모드 대신 headful 모드로 실행합니다. (xvfb-run이 이미 가상 디스플레이를 제공함)
     if os.getenv("GITHUB_ACTIONS") == "true":
-        options.add_argument("--headless=new")
+        # options.add_argument("--headless=new")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
