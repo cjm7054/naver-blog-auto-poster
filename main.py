@@ -156,18 +156,18 @@ def post_to_naver(driver, title, content):
         # 4. Enter Title (제목 입력)
         print("제목 입력창을 찾는 중...")
         try:
-            title_element = wait.until(EC.presence_of_element_located((
-                By.CSS_SELECTOR, 
-                ".se-documentTitle, .se-title-text, span.se-placeholder[data-placeholder='제목을 입력하세요'], [contenteditable='true']"
+            title_element = wait.until(EC.element_to_be_clickable((
+                By.XPATH, 
+                "//*[contains(text(), '제목을 입력하세요')] | //div[contains(@class, 'se-documentTitle')] | //span[contains(@class, 'se-placeholder') and contains(@data-placeholder, '제목')]"
             )))
         except Exception:
-            title_element = driver.find_element(By.CSS_SELECTOR, ".se-title-text, .se-documentTitle")
+            title_element = driver.find_element(By.CSS_SELECTOR, ".se-documentTitle, .se-title-text")
             
         print("제목 입력창 클릭 및 내용 입력 중...")
         ActionChains(driver).move_to_element(title_element).click().perform()
         time.sleep(1)
         
-        # 기존 텍스트 삭제 및 제목 입력
+        # 기존 텍스트 삭제 및 새 제목 입력
         ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
         time.sleep(0.5)
         pyperclip.copy(title)
@@ -176,39 +176,26 @@ def post_to_naver(driver, title, content):
         
         # 5. Enter Content (본문 입력)
         print("본문 입력창을 찾는 중...")
-        body_element = None
-        body_selectors = [
-            ".se-main-container",
-            ".se-component-content",
-            "p.se-text-paragraph",
-            ".se-content",
-            ".se-section-text",
-            "span.se-placeholder"
-        ]
-        
-        for sel in body_selectors:
-            elements = driver.find_elements(By.CSS_SELECTOR, sel)
-            for el in elements:
-                # 제목 관련 요소는 제외
-                el_class = (el.get_attribute("class") or "").lower()
-                if el.is_displayed() and "title" not in el_class:
-                    body_element = el
-                    break
-            if body_element:
-                break
-                
-        if body_element:
-            print("본문 입력 영역을 찾았습니다. 클릭 및 내용 입력 중...")
-            ActionChains(driver).move_to_element(body_element).click().perform()
-        else:
-            print("본문 요소를 명시적으로 찾지 못해 에디터 중앙 클릭을 시도합니다.")
-            editor_container = driver.find_element(By.TAG_NAME, "body")
-            ActionChains(driver).move_to_element_with_offset(editor_container, 300, 350).click().perform()
+        # 스마트에디터 ONE의 본문 기본 안내문구: '글감과 함께 나의 일상을 기록해보세요!'
+        try:
+            body_element = wait.until(EC.element_to_be_clickable((
+                By.XPATH,
+                "//*[contains(text(), '일상을 기록해보세요') or contains(text(), '글감과 함께')] | //div[contains(@class, 'se-main-container')]//p[contains(@class, 'se-text-paragraph')]"
+            )))
+        except Exception:
+            body_element = driver.find_element(By.XPATH, "//div[contains(@class, 'se-component-content')]//p | //div[contains(@class, 'se-main-container')]//p")
             
+        print("본문 입력 영역을 찾았습니다. 클릭 및 내용 입력 중...")
+        ActionChains(driver).move_to_element(body_element).click().perform()
         time.sleep(1)
+        
+        # 기존 본문 삭제 후 새 본문 내용 붙여넣기
+        ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
+        time.sleep(0.5)
         pyperclip.copy(content)
         driver.switch_to.active_element.send_keys(Keys.CONTROL, 'v')
         time.sleep(1)
+        
         # 본문 상태 갱신을 위해 엔터 키 한 번 입력
         try:
             driver.switch_to.active_element.send_keys(Keys.ENTER)
