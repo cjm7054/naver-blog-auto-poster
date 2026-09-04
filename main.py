@@ -208,6 +208,12 @@ def post_to_naver(driver, title, content):
         time.sleep(1)
         pyperclip.copy(content)
         driver.switch_to.active_element.send_keys(Keys.CONTROL, 'v')
+        time.sleep(1)
+        # 본문 상태 갱신을 위해 엔터 키 한 번 입력
+        try:
+            driver.switch_to.active_element.send_keys(Keys.ENTER)
+        except Exception:
+            pass
         time.sleep(2)
         
         # 6. Click Publish (상단 우측 발행 버튼 클릭)
@@ -237,9 +243,7 @@ def post_to_naver(driver, title, content):
         print("발행 설정 레이어에서 최종 '발행' 확인 버튼을 찾는 중...")
         final_publish_btn = None
         for _ in range(15):
-            # 스마트에디터 ONE의 최종 발행 버튼:
-            # 1. 팝업 레이어 내부에서 정확히 '발행' 텍스트를 가진 버튼
-            # 2. 클래스명에 confirm_btn이 포함된 버튼 (예: confirm_btn__2Xa9k)
+            # 스마트에디터 ONE의 최종 발행 버튼: 클래스명에 confirm_btn 포함 (예: confirm_btn__Mte8q)
             candidates = driver.find_elements(
                 By.XPATH, 
                 "//div[contains(@class, 'layer_publish') or contains(@class, 'publish_layer') or contains(@class, 'layer')]//button"
@@ -249,7 +253,6 @@ def post_to_naver(driver, title, content):
                     text = btn.text.strip()
                     btn_class = btn.get_attribute("class") or ""
                     if btn.is_displayed() and btn != top_publish_btn:
-                        # '발행 설정'이 아니라 정확히 '발행'인 버튼 또는 confirm_btn 클래스
                         if text == "발행" or "confirm_btn" in btn_class or "btn_confirm" in btn_class:
                             final_publish_btn = btn
                             print(f"최종 발행 버튼 발견: text='{text}', class='{btn_class}'")
@@ -277,11 +280,20 @@ def post_to_naver(driver, title, content):
             raise Exception("발행 설정 레이어의 최종 '발행' 확인 버튼을 찾을 수 없습니다.")
             
         print("최종 '발행' 버튼 클릭...")
-        # 1. 스크롤하여 버튼 노출
-        driver.execute_script("arguments[0].scrollIntoView(true);", final_publish_btn)
-        time.sleep(0.5)
+        # ⚠️ scrollIntoView는 패널을 닫아버릴 수 있으므로 절대 사용하지 않습니다.
         
-        # 2. React 이벤트를 트리거하기 위해 mouse 이벤트를 순차적으로 dispatch하고 click 실행
+        # ActionChains로 마우스 이동 후 클릭
+        try:
+            ActionChains(driver).move_to_element(final_publish_btn).click().perform()
+        except Exception:
+            pass
+            
+        # 자바스크립트 click 및 dispatchEvent 동시 실행
+        try:
+            final_publish_btn.click()
+        except Exception:
+            pass
+            
         driver.execute_script("""
             const el = arguments[0];
             el.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window}));
@@ -290,9 +302,12 @@ def post_to_naver(driver, title, content):
             el.click();
         """, final_publish_btn)
         
-        # ActionChains로도 물리적 클릭 보강
+        # 혹시 모를 브라우저 alert 알림창 자동 승인
+        time.sleep(1)
         try:
-            ActionChains(driver).move_to_element(final_publish_btn).click().perform()
+            alert = driver.switch_to.alert
+            print(f"브라우저 알림창 감지 및 확인: {alert.text}")
+            alert.accept()
         except Exception:
             pass
             
@@ -300,11 +315,13 @@ def post_to_naver(driver, title, content):
         # 발행 완료 후 글 뷰어 페이지(PostView 등)로 리다이렉트될 때까지 최대 20초 대기
         try:
             WebDriverWait(driver, 20).until(
-                lambda d: "Redirect=Write" not in d.current_url
+                lambda d: "Redirect=Write" not in d.current_url and "postwrite" not in d.current_url
             )
             print(f"🎉 네이버 블로그 포스팅이 성공적으로 발행되었습니다! 현재 URL: {driver.current_url}")
         except Exception:
-            print("안내: URL 자동 이동 대기 시간 초과 (현재 URL:", driver.current_url, ")")
+            # 캡처를 남기고 에러를 발생시켜 GitHub Actions에서 원인 스크린샷을 바로 확인할 수 있도록 함
+            print("❌ 페이지 이동 실패 (발행 미완료). 현재 화면을 저장합니다...")
+            raise Exception(f"포스팅 발행 후 페이지 이동 실패! 에디터에 그대로 머물러 있습니다. (현재 URL: {driver.current_url})")
             
         time.sleep(5)
         
