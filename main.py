@@ -153,48 +153,59 @@ def post_to_naver(driver, title, content):
         except:
             pass
         
-        # 4. Enter Title
-        # 네이버 스마트에디터 ONE의 클래스명이 유동적이므로, contenteditable 속성으로 첫번째 입력창(제목)을 찾습니다.
+        # 4. Enter Title (제목 입력)
+        print("제목 입력창을 찾는 중...")
         try:
-            content_editables = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, "[contenteditable='true']")))
-            if len(content_editables) >= 2:
-                title_element = content_editables[0]
-                body_element = content_editables[1]
-            else:
-                # 못 찾았을 경우 대비용 백업 셀렉터
-                title_element = driver.find_element(By.CSS_SELECTOR, ".se-title-text, .se-documentTitle")
-                body_element = None
-        except Exception as e:
-            print("contenteditable 요소를 찾지 못했습니다. 백업 셀렉터를 시도합니다.")
-            title_element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, ".se-title-text, .se-documentTitle, span.se-placeholder")))
-            body_element = None
+            title_element = wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR, 
+                ".se-documentTitle, .se-title-text, span.se-placeholder[data-placeholder='제목을 입력하세요'], [contenteditable='true']"
+            )))
+        except Exception:
+            title_element = driver.find_element(By.CSS_SELECTOR, ".se-title-text, .se-documentTitle")
             
-        print("제목 입력창을 찾았습니다. 클릭 및 내용 입력을 시작합니다.")
+        print("제목 입력창 클릭 및 내용 입력 중...")
         ActionChains(driver).move_to_element(title_element).click().perform()
         time.sleep(1)
         
-        # Select all and delete old auto-saved text
+        # 기존 텍스트 삭제 및 제목 입력
         ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
-        time.sleep(1)
-        
-        # Type new title
+        time.sleep(0.5)
         pyperclip.copy(title)
         driver.switch_to.active_element.send_keys(Keys.CONTROL, 'v')
         time.sleep(1)
         
-        # 5. Enter Content
+        # 5. Enter Content (본문 입력)
+        print("본문 입력창을 찾는 중...")
+        body_element = None
+        body_selectors = [
+            ".se-main-container",
+            ".se-component-content",
+            "p.se-text-paragraph",
+            ".se-content",
+            ".se-section-text",
+            "span.se-placeholder"
+        ]
+        
+        for sel in body_selectors:
+            elements = driver.find_elements(By.CSS_SELECTOR, sel)
+            for el in elements:
+                # 제목 관련 요소는 제외
+                el_class = (el.get_attribute("class") or "").lower()
+                if el.is_displayed() and "title" not in el_class:
+                    body_element = el
+                    break
+            if body_element:
+                break
+                
         if body_element:
+            print("본문 입력 영역을 찾았습니다. 클릭 및 내용 입력 중...")
             ActionChains(driver).move_to_element(body_element).click().perform()
         else:
-            # Press TAB to move to the content area
-            ActionChains(driver).send_keys(Keys.TAB).perform()
+            print("본문 요소를 명시적으로 찾지 못해 에디터 중앙 클릭을 시도합니다.")
+            editor_container = driver.find_element(By.TAG_NAME, "body")
+            ActionChains(driver).move_to_element_with_offset(editor_container, 300, 350).click().perform()
             
         time.sleep(1)
-        
-        # Select all and delete old auto-saved text
-        ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
-        time.sleep(1)
-        
         pyperclip.copy(content)
         driver.switch_to.active_element.send_keys(Keys.CONTROL, 'v')
         time.sleep(2)
@@ -205,50 +216,61 @@ def post_to_naver(driver, title, content):
         driver.execute_script("arguments[0].click();", publish_btn)
         time.sleep(3)
         
-        # Confirm publish button (발행 팝업 내의 최종 녹색 '발행' 버튼)
+        # Confirm publish button (발행 설정 패널 내의 최종 초록색 '발행' 버튼)
         print("발행 설정 레이어에서 최종 '발행' 버튼을 클릭합니다...")
-        try:
-            # SmartEditor ONE 최종 발행 버튼의 대표 셀렉터들
-            confirm_btn = wait.until(EC.element_to_be_clickable((
-                By.CSS_SELECTOR, 
-                "button.confirm_btn, button[data-action='publish'], button[class*='btn_confirm'], .publish_btn_box button"
-            )))
-            driver.execute_script("arguments[0].click();", confirm_btn)
-        except Exception:
-            # fallback: 화면에 보이는 '발행' 텍스트를 가진 마지막 버튼 클릭
+        confirm_btn = None
+        confirm_selectors = [
+            "button.confirm_btn",
+            "button[data-action='publish']",
+            "button[class*='btn_confirm']",
+            "button[class*='button_apply']",
+            "button[class*='btn_apply']",
+            ".publish_btn_box button",
+            "div[class*='layer_publish'] button[class*='confirm']",
+            "div[class*='publish_layer'] button[class*='confirm']"
+        ]
+        
+        for c_sel in confirm_selectors:
+            try:
+                btn = driver.find_element(By.CSS_SELECTOR, c_sel)
+                if btn.is_displayed():
+                    confirm_btn = btn
+                    break
+            except Exception:
+                continue
+                
+        if not confirm_btn:
+            # fallback: 화면에 보이는 '발행' 텍스트를 가진 마지막 버튼
             confirm_btns = driver.find_elements(By.XPATH, "//button[contains(., '발행')]")
-            clicked = False
             for btn in reversed(confirm_btns):
                 if btn.is_displayed() and btn != publish_btn:
-                    driver.execute_script("arguments[0].click();", btn)
-                    clicked = True
+                    confirm_btn = btn
                     break
-            if not clicked:
-                raise Exception("최종 발행 확인 버튼을 찾을 수 없습니다.")
-        
-        print("네이버 블로그 포스팅이 성공적으로 발행되었습니다! (발행 완료 대기 중)")
-        time.sleep(10) # 글이 완전히 저장되고 등록될 때까지 대기
+                    
+        if confirm_btn:
+            driver.execute_script("arguments[0].click();", confirm_btn)
+            print("네이버 블로그 포스팅이 성공적으로 발행되었습니다! (저장 대기 중...)")
+            time.sleep(10)
+        else:
+            raise Exception("발행 설정 레이어의 최종 '발행' 버튼을 찾지 못했습니다.")
         
     except Exception as e:
-        print(f"Failed to post to Naver: {e}")
+        import traceback
+        print("\n" + "="*50)
+        print(f"❌ [에러 발생]: {e}")
+        print("="*50)
+        traceback.print_exc()
         print(f"Current URL at failure: {driver.current_url}")
         
-        print("\n--- [페이지 텍스트 내용] ---")
-        try:
-            print(driver.find_element(By.TAG_NAME, "body").text[:1000])
-        except:
-            print("(텍스트 추출 실패)")
-            
-        print("\n--- [페이지 소스 (일부)] ---")
-        print(driver.page_source[:2000])
-        
         # Dump HTML source for debugging
-        with open("error_page.html", "w", encoding="utf-8") as f:
-            f.write(driver.page_source)
+        try:
+            with open("error_page.html", "w", encoding="utf-8") as f:
+                f.write(driver.page_source)
+            driver.save_screenshot("error_screenshot.png")
+            print("에러 화면이 error_screenshot.png 로, 페이지 소스가 error_page.html 로 저장되었습니다!")
+        except Exception as save_err:
+            print(f"에러 로그 저장 중 예외 발생: {save_err}")
             
-        driver.save_screenshot("error_screenshot.png")
-        print("에러 화면이 error_screenshot.png 로, 페이지 소스가 error_page.html로 저장되었습니다!")
-        
         import sys
         sys.exit(1)
 
