@@ -237,37 +237,35 @@ def post_to_naver(driver, title, content):
         print("발행 설정 레이어에서 최종 '발행' 확인 버튼을 찾는 중...")
         final_publish_btn = None
         for _ in range(15):
-            # 1) 명시적 클래스명 셀렉터로 먼저 시도
-            confirm_selectors = [
-                "button.confirm_btn",
-                "button[data-action='publish']",
-                "button[class*='btn_confirm']",
-                "button[class*='button_apply']",
-                "button[class*='btn_apply']",
-                ".publish_btn_box button",
-                "div[class*='layer_publish'] button",
-                "div[class*='publish_layer'] button"
-            ]
-            for c_sel in confirm_selectors:
-                for btn in driver.find_elements(By.CSS_SELECTOR, c_sel):
-                    try:
-                        if btn.is_displayed() and "발행" in btn.text:
+            # 스마트에디터 ONE의 최종 발행 버튼:
+            # 1. 팝업 레이어 내부에서 정확히 '발행' 텍스트를 가진 버튼
+            # 2. 클래스명에 confirm_btn이 포함된 버튼 (예: confirm_btn__2Xa9k)
+            candidates = driver.find_elements(
+                By.XPATH, 
+                "//div[contains(@class, 'layer_publish') or contains(@class, 'publish_layer') or contains(@class, 'layer')]//button"
+            )
+            for btn in reversed(candidates):
+                try:
+                    text = btn.text.strip()
+                    btn_class = btn.get_attribute("class") or ""
+                    if btn.is_displayed() and btn != top_publish_btn:
+                        # '발행 설정'이 아니라 정확히 '발행'인 버튼 또는 confirm_btn 클래스
+                        if text == "발행" or "confirm_btn" in btn_class or "btn_confirm" in btn_class:
                             final_publish_btn = btn
+                            print(f"최종 발행 버튼 발견: text='{text}', class='{btn_class}'")
                             break
-                    except Exception:
-                        continue
-                if final_publish_btn:
-                    break
-                    
+                except Exception:
+                    continue
             if final_publish_btn:
                 break
                 
-            # 2) fallback: 상단 발행 버튼과 다른, 화면에 보이는 '발행' 버튼
-            candidates = driver.find_elements(By.XPATH, "//button[contains(., '발행')]")
-            for btn in reversed(candidates):
+            # fallback: 전체 버튼 중 top_publish_btn과 다르고 텍스트가 정확히 '발행'인 보이는 버튼
+            all_btns = driver.find_elements(By.XPATH, "//button[normalize-space(.)='발행']")
+            for btn in reversed(all_btns):
                 try:
                     if btn.is_displayed() and btn != top_publish_btn:
                         final_publish_btn = btn
+                        print(f"Fallback 최종 발행 버튼 발견: class='{btn.get_attribute('class')}'")
                         break
                 except Exception:
                     continue
@@ -279,9 +277,36 @@ def post_to_naver(driver, title, content):
             raise Exception("발행 설정 레이어의 최종 '발행' 확인 버튼을 찾을 수 없습니다.")
             
         print("최종 '발행' 버튼 클릭...")
-        driver.execute_script("arguments[0].click();", final_publish_btn)
-        print("🎉 네이버 블로그 포스팅이 성공적으로 발행되었습니다! (저장 대기 중...)")
-        time.sleep(10)
+        # 1. 스크롤하여 버튼 노출
+        driver.execute_script("arguments[0].scrollIntoView(true);", final_publish_btn)
+        time.sleep(0.5)
+        
+        # 2. React 이벤트를 트리거하기 위해 mouse 이벤트를 순차적으로 dispatch하고 click 실행
+        driver.execute_script("""
+            const el = arguments[0];
+            el.dispatchEvent(new MouseEvent('mouseover', {bubbles: true, cancelable: true, view: window}));
+            el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window}));
+            el.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window}));
+            el.click();
+        """, final_publish_btn)
+        
+        # ActionChains로도 물리적 클릭 보강
+        try:
+            ActionChains(driver).move_to_element(final_publish_btn).click().perform()
+        except Exception:
+            pass
+            
+        print("발행 요청 완료. 블로그 글 등록 및 페이지 이동 대기 중...")
+        # 발행 완료 후 글 뷰어 페이지(PostView 등)로 리다이렉트될 때까지 최대 20초 대기
+        try:
+            WebDriverWait(driver, 20).until(
+                lambda d: "Redirect=Write" not in d.current_url
+            )
+            print(f"🎉 네이버 블로그 포스팅이 성공적으로 발행되었습니다! 현재 URL: {driver.current_url}")
+        except Exception:
+            print("안내: URL 자동 이동 대기 시간 초과 (현재 URL:", driver.current_url, ")")
+            
+        time.sleep(5)
         
     except Exception as e:
         import traceback
