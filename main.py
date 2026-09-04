@@ -199,22 +199,35 @@ def post_to_naver(driver, title, content):
         driver.switch_to.active_element.send_keys(Keys.CONTROL, 'v')
         time.sleep(2)
         
-        # 6. Click Publish (발행)
-        publish_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(., '발행')]")))
-        publish_btn.click()
-        time.sleep(2)
+        # 6. Click Publish (상단 우측 발행 버튼 클릭)
+        print("상단 '발행' 버튼을 클릭합니다...")
+        publish_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'btn_publish') or contains(., '발행')]")))
+        driver.execute_script("arguments[0].click();", publish_btn)
+        time.sleep(3)
         
-        # Confirm publish button (발행 팝업 내의 최종 버튼)
-        confirm_btns = driver.find_elements(By.XPATH, "//button[contains(., '발행')]")
-        for btn in reversed(confirm_btns):
-            if btn.is_displayed() and btn != publish_btn:
-                driver.execute_script("arguments[0].scrollIntoView(true);", btn)
-                time.sleep(0.5)
-                driver.execute_script("arguments[0].click();", btn)
-                break
+        # Confirm publish button (발행 팝업 내의 최종 녹색 '발행' 버튼)
+        print("발행 설정 레이어에서 최종 '발행' 버튼을 클릭합니다...")
+        try:
+            # SmartEditor ONE 최종 발행 버튼의 대표 셀렉터들
+            confirm_btn = wait.until(EC.element_to_be_clickable((
+                By.CSS_SELECTOR, 
+                "button.confirm_btn, button[data-action='publish'], button[class*='btn_confirm'], .publish_btn_box button"
+            )))
+            driver.execute_script("arguments[0].click();", confirm_btn)
+        except Exception:
+            # fallback: 화면에 보이는 '발행' 텍스트를 가진 마지막 버튼 클릭
+            confirm_btns = driver.find_elements(By.XPATH, "//button[contains(., '발행')]")
+            clicked = False
+            for btn in reversed(confirm_btns):
+                if btn.is_displayed() and btn != publish_btn:
+                    driver.execute_script("arguments[0].click();", btn)
+                    clicked = True
+                    break
+            if not clicked:
+                raise Exception("최종 발행 확인 버튼을 찾을 수 없습니다.")
         
-        print("Naver Blog post created successfully!")
-        time.sleep(5) # Wait a bit before closing
+        print("네이버 블로그 포스팅이 성공적으로 발행되었습니다! (발행 완료 대기 중)")
+        time.sleep(10) # 글이 완전히 저장되고 등록될 때까지 대기
         
     except Exception as e:
         print(f"Failed to post to Naver: {e}")
