@@ -346,18 +346,41 @@ def post_to_naver(driver, title, content, tags=None):
         driver.execute_script("arguments[0].click();", top_publish_btn)
         time.sleep(3)
         
-        # 전체공개(Public) 라디오 버튼 명시적 클릭
-        print("발행 설정을 '전체공개'로 설정합니다...")
+        # 전체공개(Public) 라디오 버튼 강제 활성화
+        print("발행 설정을 '전체공개'로 강제 지정합니다...")
+        time.sleep(1)
+        driver.execute_script("""
+            // 1. 네이버 스마트에디터 ONE의 전체공개 라디오 버튼 직접 검색 및 체크
+            var labels = Array.from(document.querySelectorAll('label, span, button, div'));
+            var publicLabel = labels.find(el => el.textContent && el.textContent.trim() === '전체공개');
+            if (publicLabel) {
+                publicLabel.click();
+                var input = publicLabel.querySelector('input') || document.querySelector('input#openType1') || document.querySelector('input[value="1"]');
+                if (input) {
+                    input.checked = true;
+                    input.dispatchEvent(new Event('change', {bubbles: true}));
+                }
+            }
+            // 2. input 태그 직접 트리거
+            var radio = document.querySelector('input[name="openType"][value="1"], input#openType1, input[value="public"]');
+            if (radio) {
+                radio.checked = true;
+                radio.click();
+                radio.dispatchEvent(new Event('change', {bubbles: true}));
+            }
+        """)
+        time.sleep(1)
         try:
-            # 네이버 스마트에디터 ONE의 전체공개 라디오 버튼
-            public_btns = driver.find_elements(By.XPATH, "//label[contains(., '전체공개')] | //input[@type='radio' and contains(@value, 'public')] | //button[contains(., '전체공개')]")
-            for p_btn in public_btns:
-                if p_btn.is_displayed():
-                    driver.execute_script("arguments[0].click();", p_btn)
-                    print("✅ '전체공개' 선택 완료!")
-                    break
+            # 3. Selenium 인터랙션 보강
+            for sel in ["//label[normalize-space(.)='전체공개']", "//input[@name='openType' and @value='1']", "//*[contains(@class, 'radio') and contains(., '전체공개')]"]:
+                found = driver.find_elements(By.XPATH, sel)
+                for f in found:
+                    if f.is_displayed():
+                        driver.execute_script("arguments[0].click();", f)
+                        print("✅ '전체공개' 라디오 버튼 클릭 성공!")
+                        break
         except Exception as pub_err:
-            print(f"전체공개 설정 중 알림: {pub_err}")
+            print(f"전체공개 설정 알림: {pub_err}")
             
         # 태그 입력
         if tags:
