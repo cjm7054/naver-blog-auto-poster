@@ -266,33 +266,40 @@ def post_to_naver(driver, title, content):
         if not final_publish_btn:
             raise Exception("발행 설정 레이어의 최종 '발행' 확인 버튼을 찾을 수 없습니다.")
             
-        print("최종 '발행' 버튼 클릭...")
-        clicked_success = False
-        # 1. ActionChains 마우스 클릭 시도
+        print(f"최종 '발행' 버튼을 클릭합니다: text='{final_publish_btn.text}', class='{final_publish_btn.get_attribute('class')}'")
+        
+        # 1. 화면 스크롤 후 ActionChains 마우스 클릭
         try:
+            driver.execute_script("arguments[0].scrollIntoView(true);", final_publish_btn)
+            time.sleep(0.5)
             ActionChains(driver).move_to_element(final_publish_btn).click().perform()
-            clicked_success = True
         except Exception:
             pass
             
-        # 2. 실패 시 직접 .click() 시도
-        if not clicked_success:
-            try:
-                final_publish_btn.click()
-                clicked_success = True
-            except Exception:
-                pass
-                
-        # 3. 실패 시 JS click 시도
-        if not clicked_success:
-            try:
-                driver.execute_script("arguments[0].click();", final_publish_btn)
-                clicked_success = True
-            except Exception:
-                pass
+        # 2. 직접 Element.click()
+        try:
+            final_publish_btn.click()
+        except Exception:
+            pass
 
-        print("최종 발행 버튼 클릭 완료. 네이버 서버 반영 대기 중 (7초)...")
-        time.sleep(7)
+        # 3. JavaScript Click 및 디스패치 이벤트
+        try:
+            driver.execute_script("""
+                arguments[0].dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+                arguments[0].dispatchEvent(new MouseEvent('mouseup', {bubbles: true}));
+                arguments[0].click();
+            """, final_publish_btn)
+        except Exception:
+            pass
+            
+        # 4. 버튼에 포커스 후 ENTER 키 입력
+        try:
+            final_publish_btn.send_keys(Keys.ENTER)
+        except Exception:
+            pass
+
+        print("최종 발행 클릭 이벤트 전송 완료. 네이버 서버 비동기 반영 대기 중 (12초)...")
+        time.sleep(12)
                 
         # 혹시 모를 브라우저 alert 알림창 자동 승인
         try:
