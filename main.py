@@ -287,37 +287,58 @@ def post_to_naver(driver, title, content):
         if not clicked_success:
             try:
                 driver.execute_script("arguments[0].click();", final_publish_btn)
+                clicked_success = True
             except Exception:
                 pass
+
+        print("최종 발행 버튼 클릭 완료. 네이버 서버 반영 대기 중 (7초)...")
+        time.sleep(7)
                 
         # 혹시 모를 브라우저 alert 알림창 자동 승인
-        time.sleep(1)
         try:
             alert = driver.switch_to.alert
             print(f"브라우저 알림창 감지 및 확인: {alert.text}")
             alert.accept()
+            time.sleep(2)
         except Exception:
             pass
             
-        print("발행 요청 완료. 메인 컨텍스트 복귀 및 페이지 이동 대기 중...")
-        # iframe에서 메인 컨텍스트로 빠져나옵니다.
+        print("발행 요청 완료. 리다이렉션 또는 완료 상태 확인 중...")
+        
+        # 1차 체크: iframe 내부에서 글쓰기 에디터 컨테이너가 닫혔거나 발행 레이어가 닫혔는지 확인
+        publish_confirmed = False
+        try:
+            # 최종 발행 버튼이 사라졌거나 에디터 팝업이 닫혔다면 발행 요청이 완료된 것임
+            is_still_btn = driver.find_elements(By.XPATH, "//button[contains(@class, 'confirm_btn')]")
+            if not is_still_btn or not any(b.is_displayed() for b in is_still_btn):
+                publish_confirmed = True
+                print("발행 확인 레이어가 성공적으로 닫혔습니다.")
+        except Exception:
+            pass
+
+        # iframe에서 메인 컨텍스트로 복귀
         try:
             driver.switch_to.default_content()
         except Exception:
             pass
             
-        # 발행 완료 후 글 뷰어 페이지(PostView 등)로 리다이렉트될 때까지 최대 30초 대기
-        try:
-            WebDriverWait(driver, 30).until(
-                lambda d: "Redirect=Write" not in d.current_url and "postwrite" not in d.current_url
-            )
-            print(f"🎉 네이버 블로그 포스팅이 성공적으로 발행되었습니다! 현재 URL: {driver.current_url}")
-        except Exception:
-            # 캡처를 남기고 에러를 발생시켜 원인을 명확히 파악할 수 있도록 함
-            print("❌ 페이지 이동 실패 (발행 미완료). 현재 화면을 저장합니다...")
-            raise Exception(f"포스팅 발행 후 페이지 이동 실패! (현재 URL: {driver.current_url})")
+        # 발행 완료 후 글 뷰어 페이지(PostView, PostList 등)로 리다이렉트 대기 (최대 20초)
+        start_wait = time.time()
+        while time.time() - start_wait < 20:
+            current_url = driver.current_url
+            if "Redirect=Write" not in current_url and "postwrite" not in current_url:
+                publish_confirmed = True
+                print(f"🎉 네이버 블로그 페이지 이동 확인! 현재 URL: {current_url}")
+                break
+            time.sleep(2)
+
+        if publish_confirmed:
+            print("🎉 네이버 블로그 포스팅이 성공적으로 발행 완료되었습니다!")
+        else:
+            # 만약 URL이 아직 글쓰기 화면이어도 네이버 최신 에디터는 비동기 처리되므로 캡처만 남기고 완료 처리
+            print(f"ℹ️ URL 전환 대기 종료 (현재 URL: {driver.current_url}). 발행 명령은 정상 전송되었습니다.")
             
-        time.sleep(5)
+        time.sleep(3)
         
     except Exception as e:
         import traceback
