@@ -37,6 +37,7 @@ jobs:
         NAVER_PW: ${{ secrets.NAVER_PW }}
         NID_AUT: ${{ secrets.NID_AUT }}
         NID_SES: ${{ secrets.NID_SES }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         GITHUB_ACTIONS: "true"
       run: |
         xvfb-run -a python main.py

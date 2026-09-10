@@ -40,35 +40,145 @@ def get_signal_bz_trends(driver):
         print(f"Error fetching Signal.bz trends: {e}")
         return []
 
+def generate_article_with_gemini(trends, today_str):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None, None, []
+        
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=api_key)
+        
+        top3_text = ", ".join(trends[:3])
+        all_trends_text = "\n".join([f"{i+1}위: {t}" for i, t in enumerate(trends)])
+        
+        prompt = f"""
+당신은 네이버 블로그 상위 1% 인플루언서이자 네이버 애드포스트 고수익 전문 에디터입니다.
+아래 제공된 실시간 트렌드 키워드들을 바탕으로 네이버 블로그 독자들의 체류시간을 극대화할 수 있는 최고 품질의 트렌드 브리핑 글을 작성하세요.
+
+[실시간 트렌드 목록]:
+{all_trends_text}
+
+[작성 및 네이버 애드포스트 심사 통과 규칙 - 필수]:
+1. 글자 수: 공백 제외 반드시 1,500자 ~ 2,200자 이상으로 매우 상세하고 깊이 있게 작성하세요. (단순 키워드 나열은 절대 금지)
+2. 글의 구성:
+   - [도입부]: 오늘({today_str}) 대중들의 관심이 집중된 사회적 배경과 이슈 전반에 대한 친근한 서론.
+   - [핵심 이슈 심층 분석 3선]: 1위~3위 핵심 이슈({top3_text})에 대해 각각 소제목(##)을 달고, 왜 화제가 되었는지 배경, 여론의 반응, 그리고 우리가 알아두어야 할 시사점을 3~4문단 이상 상세히 서술.
+   - [전체 순위 한눈에 보기]: 1위부터 10위까지 깔끔하게 정리된 요약 리스트.
+   - [주목할 포인트 및 Q&A]: 이번 이슈와 관련해 독자들이 가장 궁금해할 만한 핵심 질문 2가지와 명쾌한 설명.
+   - [마무리 및 소통]: 이웃 추가와 공감(하트), 댓글을 유도하는 신뢰감 있는 맺음말.
+3. 문체: 부드럽고 가독성 높은 존댓말 (~해요, ~합니다, ~살펴볼까요?).
+
+[출력 형식 - JSON 문자열]:
+{{
+  "title": "[실시간 핫이슈] {today_str} 대한민국 화제의 검색어 TOP 10 총정리 및 심층 분석",
+  "content": "본문 전체 내용 (마크다운 ## 소제목 활용)",
+  "tags": ["#실시간검색어", "#오늘의이슈", "#핫토픽", "#트렌드분석", "#실시간트렌드"]
+}}
+"""
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                response_mime_type="application/json"
+            )
+        )
+        import json
+        data = json.loads(response.text)
+        return data.get("title"), data.get("content"), data.get("tags", [])
+    except Exception as e:
+        print(f"Gemini API 생성 중 오류 또는 미설정: {e}. 고품질 리치 템플릿으로 대체합니다.")
+        return None, None, []
+
 def get_blog_post(driver):
     try:
         trends = get_signal_bz_trends(driver)
-        
         if not trends:
             print("트렌드 키워드를 찾지 못했습니다.")
-            return None, None
+            return None, None, []
             
         today = datetime.now().strftime("%Y년 %m월 %d일 %H시")
         
-        post_title = f"[오늘의 실시간 핫이슈 TOP 10] {today} 트렌드 정리!"
-        
-        post_content = f"안녕하세요! 오늘 하루 동안 가장 많은 관심을 받은 실시간 검색어 TOP 10을 정리해 드립니다.\n\n"
-        post_content += f"과연 오늘은 어떤 이슈들이 사람들의 이목을 끌었을까요?\n\n"
-        post_content += f"🔥 {today} 실시간 트렌드 TOP 10\n\n"
-        
-        for i, t in enumerate(trends):
-            post_content += f"{i+1}위: {t}\n"
+        # 1. Gemini AI를 통한 1,500자+ 고품질 심층 기사 생성 시도
+        ai_title, ai_content, ai_tags = generate_article_with_gemini(trends, today)
+        if ai_title and ai_content and len(ai_content) > 1000:
+            print(f"Gemini AI를 통해 {len(ai_content)}자의 고품질 원고가 생성되었습니다!")
+            return ai_title, ai_content, ai_tags
             
-        post_content += "\n위 키워드들은 Signal.bz 실시간 검색어 데이터를 기반으로 작성되었습니다.\n"
-        post_content += "오늘도 방문해 주셔서 감사합니다! 좋은 하루 보내세요 😊"
+        # 2. AI 키 미설정 시에도 애드포스트 1,500자 기준을 충족하는 심층 리치 원고 생성
+        top1 = trends[0] if len(trends) > 0 else "실시간 핫토픽"
+        top2 = trends[1] if len(trends) > 1 else "주요 이슈"
+        top3 = trends[2] if len(trends) > 2 else "화제의 소식"
         
-        return post_title, post_content
+        post_title = f"[오늘의 실시간 핫이슈 TOP 10] {today} 화제의 트렌드 분석 및 총정리"
+        
+        content = f"""안녕하세요! 매일 시시각각 빠르게 변화하는 대한민국 인터넷의 가장 뜨거운 화제거리와 알짜배기 트렌드 소식을 한눈에 보기 쉽게 전달해 드리는 정보 브리핑 블로그입니다.
+
+현대 사회는 정보가 너무나 방대하고 빠르게 쏟아져 나오기 때문에, 잠깐만 바쁜 일상에 집중하다 보면 오늘 대중들의 이목을 사로잡은 핵심 이슈가 무엇인지 놓치기 십상입니다. 
+
+그래서 오늘은 {today} 기준, 각종 포털과 온라인 커뮤니티, SNS에서 폭발적인 조회수와 검색량을 기록하고 있는 실시간 검색어 TOP 10을 엄선하여 그 배경과 핵심 포인트까지 꼼꼼하게 짚어드리겠습니다!
+
+---
+
+## 1. 오늘 대중의 시선이 가장 집중된 이슈: '{top1}'
+
+오늘 실시간 트렌드에서 압도적인 주목을 받고 있는 첫 번째 화제의 중심은 바로 '{top1}'입니다.
+
+인터넷 여론과 포털 뉴스를 종합해 보면, 이번 이슈는 단순한 일회성 해프닝을 넘어서 많은 네티즌들 사이에서 다양한 의견과 열띤 토론을 불러일으키고 있는 상황인데요. 특히 관련 업계와 대중문화, 그리고 사회 전반에 미칠 파급력에 대해 많은 관심이 쏠리고 있습니다.
+
+온라인 반응을 살펴보면 "전혀 예상치 못했던 전개다", "앞으로의 공식 입장과 후속 보도를 더 지켜봐야 할 것 같다"는 신중론과 함께 다양한 시선들이 공존하고 있습니다. 앞으로 발표될 추가 소식에 따라 이슈의 향방이 어떻게 전개될지 지속적인 모니터링이 필요한 대목입니다.
+
+---
+
+## 2. 뜨거운 화제를 이어가고 있는 2위 & 3위 트렌드: '{top2}', '{top3}'
+
+1위 못지않게 많은 이목을 끌고 있는 두 번째, 세 번째 키워드는 각각 '{top2}'와 '{top3}'입니다.
+
+현재 직장인들과 네티즌들 사이에서 점심시간 및 퇴근길 메인 대화 주제로 오르내리고 있으며, SNS와 유튜브, 각종 커뮤니티 게시판을 통해 관련 숏폼 영상과 분석 글들이 빠르게 확산되고 있는 모습을 확인할 수 있습니다.
+
+정보가 너무 빠르게 전달되다 보면 사실과 다른 미확인 소문이나 왜곡된 내용이 퍼질 위험도 있으므로, 항상 검증된 공식 보도와 객관적인 팩트를 바탕으로 맥락을 파악하는 지혜가 중요합니다.
+
+---
+
+## 3. 🔥 {today} 실시간 트렌드 TOP 10 한눈에 보기
+
+그렇다면 오늘 전체 검색 순위 1위부터 10위까지는 어떤 키워드들이 자리 잡았을까요? 아래 리스트를 통해 한눈에 확인해 보세요.
+
+"""
+        for i, t in enumerate(trends):
+            content += f"- **{i+1}위**: {t}\n"
+            
+        content += f"""
+---
+
+## 4. 실시간 이슈를 스마트하게 소비하는 팁 (Q&A)
+
+**Q1. 급상승 검색어는 어떤 기준으로 집계되나요?**
+A. 특정 시간대 동안 포털 및 뉴스, SNS 상에서 사용자들의 검색 빈도와 클릭 수, 그리고 기사 발행량이 단기간에 급격히 증가한 키워드를 실시간 알고리즘으로 분석하여 산출됩니다.
+
+**Q2. 자극적인 이슈 뉴스 속에서 팩트를 구별하는 방법은?**
+A. 제목만 보고 섣불리 판단하기보다는 기사 본문의 공식 출처와 당사자의 입장문 전문을 직접 확인하시는 것이 가장 안전하고 정확합니다.
+
+---
+
+## 마치며
+
+지금까지 {today} 실시간 대한민국을 뜨겁게 달군 핫이슈 TOP 10과 주요 트렌드를 종합적으로 정리해 드렸습니다. 
+
+오늘 정리해 드린 내용이 세상 돌아가는 흐름을 빠르고 정확하게 파악하시는 데 많은 도움이 되셨기를 바랍니다. 
+
+포스팅이 유익하셨다면 **공감(하트)과 따뜻한 댓글**, 그리고 유익한 트렌드 정보를 매일 가장 빠르게 받아보실 수 있도록 **이웃 추가** 부탁드립니다. 항상 신속하고 검증된 소식으로 다시 찾아뵙겠습니다. 오늘도 활기차고 행복한 하루 보내세요!"""
+
+        tags = ["#실시간검색어", "#오늘의이슈", "#핫토픽", "#실시간트렌드", f"#{top1.replace(' ', '')}", f"#{top2.replace(' ', '')}", "#트렌드정리", "#이슈브리핑", "#생활정보", "#뉴스이슈"]
+        return post_title, content, tags
         
     except Exception as e:
         print(f"트렌드 데이터를 가져오는 중 오류 발생: {e}")
-        return None, None
+        return None, None, []
 
-def post_to_naver(driver, title, content):
+def post_to_naver(driver, title, content, tags=None):
     print("Posting to Naver Blog...")
     if not NAVER_ID:
         print("Naver ID is not set in .env")
@@ -226,6 +336,38 @@ def post_to_naver(driver, title, content):
         driver.execute_script("arguments[0].click();", top_publish_btn)
         time.sleep(3)
         
+        # 전체공개(Public) 라디오 버튼 명시적 클릭
+        print("발행 설정을 '전체공개'로 설정합니다...")
+        try:
+            # 네이버 스마트에디터 ONE의 전체공개 라디오 버튼
+            public_btns = driver.find_elements(By.XPATH, "//label[contains(., '전체공개')] | //input[@type='radio' and contains(@value, 'public')] | //button[contains(., '전체공개')]")
+            for p_btn in public_btns:
+                if p_btn.is_displayed():
+                    driver.execute_script("arguments[0].click();", p_btn)
+                    print("✅ '전체공개' 선택 완료!")
+                    break
+        except Exception as pub_err:
+            print(f"전체공개 설정 중 알림: {pub_err}")
+            
+        # 태그 입력
+        if tags:
+            print(f"해시태그 {len(tags)}개 입력 중...")
+            try:
+                tag_inputs = driver.find_elements(By.CSS_SELECTOR, "input[placeholder*='태그'], .tag_input input, input[class*='tag']")
+                for t_input in tag_inputs:
+                    if t_input.is_displayed():
+                        for t in tags[:10]:
+                            tag_clean = t.replace("#", "").strip()
+                            t_input.send_keys(tag_clean)
+                            t_input.send_keys(Keys.ENTER)
+                            time.sleep(0.3)
+                        print("✅ 해시태그 입력 완료!")
+                        break
+            except Exception as t_err:
+                print(f"태그 입력 중 알림: {t_err}")
+
+        time.sleep(1)
+
         # Confirm publish button (발행 설정 패널 내의 최종 초록색 '발행' 버튼)
         print("발행 설정 레이어에서 최종 '발행' 확인 버튼을 찾는 중...")
         final_publish_btn = None
@@ -392,9 +534,9 @@ if __name__ == "__main__":
     driver = None
     try:
         driver = init_driver()
-        title, content = get_blog_post(driver)
+        title, content, tags = get_blog_post(driver)
         if title and content:
-            post_to_naver(driver, title, content)
+            post_to_naver(driver, title, content, tags)
         else:
             print("콘텐츠 생성 실패.")
     finally:
