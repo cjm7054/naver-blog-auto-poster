@@ -535,10 +535,39 @@ if __name__ == "__main__":
     try:
         driver = init_driver()
         title, content, tags = get_blog_post(driver)
-        if title and content:
-            post_to_naver(driver, title, content, tags)
-        else:
-            print("콘텐츠 생성 실패.")
+        
+        if not title or not content:
+            print("❌ 콘텐츠 생성 실패.")
+            import sys
+            sys.exit(1)
+
+        # ==========================================
+        # 🛡️ 애드포스트 심사 승인 요건 엄격 사전 검증 (Gatekeeper)
+        # ==========================================
+        from adpost_validator import AdPostValidator
+        is_passed, issues, stats = AdPostValidator.validate(title, content, tags)
+
+        print("\n" + "=" * 50)
+        print("🔍 [네이버 애드포스트 심사 적합성 자동 검증]")
+        print(f" - 글자 수(공백 제외): {stats.get('char_count_no_space')}자 (필수 기준: 1,200자 이상)")
+        print(f" - 소제목(##) 개수: {stats.get('subheading_count')}개 (필수 기준: 2개 이상)")
+        print(f" - 해시태그 개수: {stats.get('tag_count')}개 (필수 기준: 3개 이상)")
+        print(f" - 정보성(Q&A/체크리스트): {'포함' if stats.get('has_qa_or_checklist') else '미포함'}")
+
+        if not is_passed:
+            print("\n❌ [검증 실패] 애드포스트 승인 기준에 미달하여 블로그 포스팅을 즉시 중단합니다:")
+            for issue in issues:
+                print(f"  * {issue}")
+            print("애드포스트 심사에 불이익을 방지하기 위해 발행을 차단했습니다.")
+            import sys
+            sys.exit(1)
+
+        print("✅ [검증 통과] 100% 애드포스트 승인 최적화 검증 완료! 블로그에 안전하게 공개 발행합니다.")
+        print("=" * 50 + "\n")
+
+        # 검증 통과한 경우에만 네이버 블로그 발행 진행
+        post_to_naver(driver, title, content, tags)
+
     finally:
         if driver:
             driver.quit()
