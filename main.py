@@ -2,6 +2,10 @@ import os
 import time
 import requests
 import pyperclip
+import subprocess
+import platform
+import re
+import html
 from bs4 import BeautifulSoup
 from datetime import datetime
 from dotenv import load_dotenv
@@ -19,6 +23,137 @@ load_dotenv()
 
 NAVER_ID = os.getenv('NAVER_ID')
 NAVER_PW = os.getenv('NAVER_PW')
+
+def copy_to_clipboard_rich(plain_text: str, html_content: str):
+    """
+    네이버 스마트에디터 ONE에 볼드체, 글자크기(소제목), 구분선, 인용구가 온전히 인식되도록
+    HTML 리치 텍스트 클립보드 형식으로 복사합니다.
+    """
+    system = platform.system()
+    try:
+        if system == "Linux":
+            # GitHub Actions (Linux Xvfb) 환경: xclip의 text/html 타겟 활용
+            p = subprocess.Popen(
+                ["xclip", "-selection", "clipboard", "-t", "text/html"],
+                stdin=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            p.communicate(input=html_content.encode("utf-8"))
+            if p.returncode == 0:
+                print("✅ [클립보드] Linux xclip text/html 서식 복사 성공!")
+                return
+        elif system == "Windows":
+            # Windows 로컬 개발 환경용 HTML 클립보드 포맷팅
+            try:
+                import win32clipboard
+                # Windows CF_HTML 표준 헤더 구성
+                header = (
+                    "Version:0.9\r\n"
+                    "StartHTML:{:08d}\r\n"
+                    "EndHTML:{:08d}\r\n"
+                    "StartFragment:{:08d}\r\n"
+                    "EndFragment:{:08d}\r\n"
+                )
+                start_fragment = "<!--StartFragment-->"
+                end_fragment = "<!--EndFragment-->"
+                content_html = f"<html><body>{start_fragment}{html_content}{end_fragment}</body></html>"
+                
+                # 가상 길이 계산
+                dummy = header.format(0, 0, 0, 0)
+                start_html_idx = len(dummy)
+                start_frag_idx = start_html_idx + content_html.find(start_fragment) + len(start_fragment)
+                end_frag_idx = start_html_idx + content_html.find(end_fragment)
+                end_html_idx = start_html_idx + len(content_html)
+                
+                final_payload = header.format(start_html_idx, end_html_idx, start_frag_idx, end_frag_idx) + content_html
+                
+                cf_html = win32clipboard.RegisterClipboardFormat("HTML Format")
+                win32clipboard.OpenClipboard(0)
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardData(cf_html, final_payload.encode("utf-8"))
+                win32clipboard.CloseClipboard()
+                print("✅ [클립보드] Windows CF_HTML 서식 복사 성공!")
+                return
+            except Exception as win_err:
+                print(f"Windows HTML 클립보드 예외: {win_err}")
+    except Exception as e:
+        print(f"HTML 클립보드 복사 중 알림: {e}")
+    
+    # Fallback: 일반 텍스트 클립보드
+    pyperclip.copy(plain_text)
+    print("ℹ️ 클립보드 fallback (일반 텍스트) 복사 완료.")
+
+def markdown_to_naver_html(md_text: str) -> str:
+    """
+    마크다운 텍스트를 네이버 스마트에디터 ONE이 가장 미려하게 인식하는 리치 HTML로 변환합니다.
+    - ## 소제목 -> 큰 폰트(22px), 볼드, 여백, 세련된 하단 밑줄
+    - ### 소제목 -> 중형 폰트(18px), 볼드
+    - **강조 문장** -> <strong style="font-weight:bold; color:#03c75a;"> (네이버 그린 또는 진한 볼드)
+    - --- 구분선 -> 깔끔한 hr 구분선
+    - Q&A / 체크리스트 -> 박스형 스타일
+    """
+    lines = md_text.split("\n")
+    html_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            html_lines.append('<p style="margin: 10px 0; line-height: 1.8;">&nbsp;</p>')
+            continue
+            
+        # 구분선 (--- 또는 ***)
+        if stripped in ["---", "***", "___"]:
+            html_lines.append('<hr style="border: 0; height: 1px; background: #e0e0e0; margin: 25px 0;">')
+            continue
+            
+        # 소제목 1 (##)
+        if stripped.startswith("## "):
+            title_text = stripped[3:].strip()
+            # 볼드 마크다운 제거
+            title_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', title_text)
+            html_lines.append(
+                f'<h2 style="font-size: 22px; font-weight: bold; color: #111; border-left: 5px solid #03c75a; padding-left: 12px; margin: 30px 0 15px 0; line-height: 1.4;">{title_text}</h2>'
+            )
+            continue
+            
+        # 소제목 2 (###)
+        if stripped.startswith("### "):
+            title_text = stripped[4:].strip()
+            title_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', title_text)
+            html_lines.append(
+                f'<h3 style="font-size: 18px; font-weight: bold; color: #222; margin: 20px 0 10px 0; line-height: 1.4;">📌 {title_text}</h3>'
+            )
+            continue
+            
+        # Q&A 질문 패턴 (Q1., **Q1., Q., 질문)
+        if re.match(r'^\*?\*?Q\d*[\.:]', stripped):
+            styled_q = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', stripped)
+            html_lines.append(
+                f'<div style="background-color: #f7f9fa; border-left: 4px solid #03c75a; padding: 12px 16px; margin: 15px 0 8px 0; font-size: 16px; font-weight: bold; color: #1e1e1e;">💡 {styled_q}</div>'
+            )
+            continue
+            
+        # Q&A 답변 패턴 (A., **A., 답변)
+        if re.match(r'^\*?\*?A[\.:]', stripped):
+            styled_a = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', stripped)
+            html_lines.append(
+                f'<p style="margin: 8px 0 16px 0; padding-left: 10px; font-size: 15px; color: #444; line-height: 1.8;">{styled_a}</p>'
+            )
+            continue
+            
+        # 일반 본문 문단 처리
+        content_line = stripped
+        # 볼드 변환: **텍스트** -> <strong style="font-weight: bold; color: #000;">
+        content_line = re.sub(r'\*\*(.*?)\*\*', r'<strong style="font-weight: bold; color: #111;">\1</strong>', content_line)
+        
+        # 번호 매기기 리스트 (1. 2. 3.)
+        if re.match(r'^\d+\.\s+', content_line):
+            html_lines.append(f'<p style="margin: 8px 0; font-size: 15px; line-height: 1.8; color: #333; padding-left: 5px;">• {content_line}</p>')
+        else:
+            html_lines.append(f'<p style="margin: 12px 0; font-size: 15px; line-height: 1.8; color: #333;">{content_line}</p>')
+            
+    return "\n".join(html_lines)
+
 
 def get_signal_bz_trends(driver):
     print("Fetching today's top 10 real-time search trends from Signal.bz...")
@@ -60,20 +195,23 @@ def generate_article_with_gemini(selected_keyword, other_trends, today_str):
 [작성 및 네이버 애드포스트 심사 통과 절대 규칙 - 100% 필수 준수]:
 1. 글자 수: 공백 제외 반드시 1,600자 ~ 2,300자 이상으로 매우 상세하고 깊이 있게 작성하세요. (다른 키워드 10개 나열하는 글이 아니라, 오직 [{selected_keyword}] 하나에만 집중된 완성형 단독 칼럼/정보글입니다!)
 2. 절대 단순 나열식 리스트 글을 쓰지 마세요.
-3. 블로그 포스팅 구성:
+3. [가독성 & 강조 최적화 (매우 중요)]:
+   - 독자가 스크롤을 내리며 빠르게 핵심을 파악할 수 있도록, **각 문단마다 가장 중요한 핵심 문장, 핵심 수치, 핵심 결론에는 반드시 마크다운 볼드(**굵은 글씨**)를 적극 적용**하세요!
+   - 밋밋한 줄글 나열을 지양하고, 눈에 쏙 들어오는 소제목(##, ###)과 중요한 팩트(**핵심 문장**)를 시각적으로 뚜렷하게 부각시키세요.
+4. 블로그 포스팅 구성:
    - [도입부 (서론)]: 왜 지금 [{selected_keyword}]이(가) 대중들의 폭발적인 관심을 받고 있는지, 배경과 이슈의 발단을 흥미진진하게 서술.
    - [본문 소제목 1 (##)]: 사건/이슈의 구체적인 전개 과정과 핵심 팩트 총정리
    - [본문 소제목 2 (##)]: 대중들의 여론 반응과 온라인/업계의 다양한 시각 분석
    - [본문 소제목 3 (##)]: 향후 전망 및 우리가 주목해야 할 핵심 시사점/체크포인트
    - [FAQ 섹션 (##)]: 독자들이 가장 궁금해할 만한 핵심 질문 3가지와 명쾌하고 상세한 답변 (Q1, Q2, Q3)
-   - [결론 (##)]: 전체 내용을 한눈에 요약하고, 독자에게 의견을 묻는 소통형 맺음말 및 공감/이웃추가 유도.
-4. 문체: 부드럽고 가독성 높은 친절한 존댓말 (~합니다, ~해보세요, ~알아보았습니다).
-5. 해시태그: 주제와 밀접한 고효율 태그 10개 추출.
+   - [결론 (##)]: 전체 내용을 한눈에 요약하고, 독자에게 의견을묻는 소통형 맺음말 및 공감/이웃추가 유도.
+5. 문체: 부드럽고 가독성 높은 친절한 존댓말 (~합니다, ~해보세요, ~알아보았습니다).
+6. 해시태그: 주제와 밀접한 고효율 태그 10개 추출.
 
 [출력 형식 - 반드시 유효한 JSON 형식만 반환]:
 {{
   "title": "{selected_keyword} 논란 및 핵심 쟁점 총정리! 화제가 된 진짜 이유와 향후 전망",
-  "content": "본문 전체 내용 (마크다운 ## 소제목 활용)",
+  "content": "본문 전체 내용 (마크다운 ## 소제목 및 중요 문장 **볼드 강조** 적극 활용)",
   "tags": ["#{selected_keyword.replace(' ', '')}", "#{selected_keyword.replace(' ', '')}이유", "#실시간이슈", "#핫토픽", "#오늘의이슈", "#트렌드분석", "#이슈총정리", "#네이버블로그", "#정보공유", "#이슈체크"]
 }}
 """
@@ -117,33 +255,33 @@ def get_blog_post(driver):
         
         content = f"""안녕하세요! 빠르게 변화하는 사회 이슈와 대중들의 뜨거운 화제거리를 누구보다 알기 쉽고 깊이 있게 정리해 드리는 트렌드 이슈 전문 블로그입니다.
 
-최근 각종 포털 사이트의 실시간 검색어 순위와 주요 뉴스 헤드라인, 그리고 대형 온라인 커뮤니티를 가장 뜨겁게 달구고 있는 단 하나의 키워드를 꼽으라면 단연 '{selected_keyword}'일 것입니다.
+최근 각종 포털 사이트의 실시간 검색어 순위와 주요 뉴스 헤드라인, 그리고 대형 온라인 커뮤니티를 가장 뜨겁게 달구고 있는 단 하나의 키워드를 꼽으라면 단연 **'{selected_keyword}'**일 것입니다.
 
-많은 분들이 갑작스럽게 떠오른 이 이슈를 접하고 "도대체 어떤 사연이 있길래 이렇게 실시간 1위까지 올라왔을까?", "핵심 쟁점과 팩트는 무엇일까?" 하며 많은 궁금증을 가지고 검색해 보고 계실 텐데요.
+많은 분들이 갑작스럽게 떠오른 이 이슈를 접하고 **"도대체 어떤 사연이 있길래 이렇게 실시간 1위까지 올라왔을까?", "핵심 쟁점과 팩트는 무엇일까?"** 하며 많은 궁금증을 가지고 검색해 보고 계실 텐데요.
 
-그래서 오늘은 단편적인 찌라시나 자극적인 소문을 배제하고, 지금까지 공식적으로 확인된 객관적인 사실 관계와 대중들의 여론 반응, 그리고 앞으로의 파급 효과까지 '{selected_keyword}'의 모든 것을 완벽하게 짚어드리겠습니다!
+그래서 오늘은 단편적인 찌라시나 자극적인 소문을 배제하고, **지금까지 공식적으로 확인된 객관적인 사실 관계와 대중들의 여론 반응, 그리고 앞으로의 파급 효과**까지 '{selected_keyword}'의 모든 것을 완벽하게 짚어드리겠습니다!
 
 ---
 
 ## 1. '{selected_keyword}', 도대체 무슨 일일까요? 발단과 배경 총정리
 
-이번 '{selected_keyword}' 사안이 폭발적인 관심을 받게 된 것은 특정 보도와 온라인상의 입장 발표가 도화선이 되었습니다.
+이번 '{selected_keyword}' 사안이 폭발적인 관심을 받게 된 것은 **특정 공식 보도와 온라인상의 핵심 입장 발표**가 직접적인 도화선이 되었습니다.
 
-사건의 발단을 시간 순서대로 짚어보면, 당초 예상치 못했던 전개가 펼쳐지며 다양한 이해관계자들의 입장 차이가 극명하게 드러났는데요. 특히 이전부터 누적되어 온 여러 사회적 관심사와 맞물리면서 단순한 개인의 일탈이나 해프닝 수준을 넘어선 공공의 논쟁거리로 급부상하게 되었습니다.
+사건의 발단을 시간 순서대로 짚어보면, 당초 예상치 못했던 전개가 펼쳐지며 **다양한 이해관계자들의 입장 차이가 극명하게 충돌**하기 시작했는데요. 특히 이전부터 누적되어 온 여러 사회적 관심사와 맞물리면서 단순한 개인의 일탈이나 해프닝 수준을 넘어선 **공공의 중대 논쟁거리로 급부상**하게 되었습니다.
 
-현재 관련 부처와 소속 기관, 그리고 당사자 측에서도 상황의 중대성을 인지하고 공식적인 입장문을 내놓거나 사실 관계 확인에 착수하고 있는 상태입니다. 정보가 너무 빠르게 퍼져나가는 시점일수록 확인되지 않은 추측성 루머에 휩쓸리지 않고 정확한 맥락을 파악하는 태도가 중요합니다.
+현재 관련 부처와 소속 기관, 그리고 당사자 측에서도 **상황의 중대성을 인지하고 공식적인 입장문을 내놓거나 사실 관계 확인에 착수**하고 있는 상태입니다. 정보가 너무 빠르게 퍼져나가는 시점일수록 **확인되지 않은 추측성 루머에 휩쓸리지 않고 정확한 팩트와 맥락을 파악하는 태도**가 무엇보다 중요합니다.
 
 ---
 
 ## 2. 네티즌 여론과 전문가들의 엇갈린 시선: 핵심 쟁점 3가지
 
-현재 각종 커뮤니티와 SNS에서는 이번 '{selected_keyword}' 이슈를 두고 뜨거운 갑론을박이 벌어지고 있습니다. 여론의 시각을 크게 3가지 쟁점으로 압축해 볼 수 있습니다.
+현재 각종 커뮤니티와 SNS에서는 이번 '{selected_keyword}' 이슈를 두고 뜨거운 갑론을박이 벌어지고 있습니다. 여론의 시각을 크게 **3가지 핵심 쟁점**으로 압축해 볼 수 있습니다.
 
-### 첫째: 원칙과 절차의 적절성 논란
-일부 여론에서는 이번 사안의 처리 과정이나 발단이 상식과 법적/도덕적 기준에 부합했는지를 두고 비판적인 목소리를 높이고 있습니다. 사전에 충분한 조율이나 예방이 가능하지 않았느냐는 지적도 함께 제기되는 상황입니다.
+### 쟁점 1: 원칙과 절차의 적절성 논란
+일부 여론에서는 **이번 사안의 처리 과정이나 발단이 상식과 법적/도덕적 기준에 온전히 부합했는지**를 두고 비판적인 목소리를 높이고 있습니다. 사전에 충분한 조율이나 예방 조치가 가능하지 않았느냐는 지적도 함께 제기되는 상황입니다.
 
-### 둘째: 구조적인 문제인가, 개인의 책임인가
-단순히 특정 인물이나 사건만의 문제가 아니라, 우리 사회와 조직 문화 내에 만연해 있던 구조적 모순이 곪아 터진 것이라는 분석도 설득력을 얻고 있습니다. 이번 기회를 통해 보다 근본적인 재발 방지 대책이 마련되어야 한다는 여론이 힘을 얻고 있습니다.
+### 쟁점 2: 구조적인 문제인가, 개인의 책임인가
+단순히 특정 개인만의 문제가 아니라, **우리 사회와 조직 문화 내에 만연해 있던 구조적 모순이 표출된 결과**라는 분석도 강력한 설득력을 얻고 있습니다. 이번 기회를 통해 보다 **근본적인 재발 방지 가이드라인이 마련되어야 한다**는 여론이 힘을 얻고 있습니다.
 
 ### 셋째: 향후 미칠 파급력과 선례
 이번 이슈가 앞으로 유사한 사안들에 어떤 기준점과 선례를 남기게 될지에 대해 각계 전문가들의 이목이 쏠리고 있습니다. 결과에 따라 관련 업계의 관행이나 법적 제도 개선으로까지 이어질 가능성이 높다는 관측이 지배적입니다.
@@ -309,10 +447,15 @@ def post_to_naver(driver, title, content, tags=None):
         ActionChains(driver).move_to_element(body_element).click().perform()
         time.sleep(1)
         
-        # 기존 본문 삭제 후 새 본문 내용 붙여넣기
+        # 기존 본문 삭제 후 새 본문 내용 붙여넣기 (HTML 서식 & 볼드 & 글자크기 적용)
         ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
         time.sleep(0.5)
-        pyperclip.copy(content)
+        
+        # 마크다운 본문을 네이버 스마트에디터 ONE용 리치 HTML 서식으로 변환
+        html_formatted_content = markdown_to_naver_html(content)
+        print("🎨 본문 마크다운을 네이버 리치 에디터 서식(제목 크기, 볼드 강조, 구분선)으로 변환 완료!")
+        
+        copy_to_clipboard_rich(plain_text=content, html_content=html_formatted_content)
         driver.switch_to.active_element.send_keys(Keys.CONTROL, 'v')
         time.sleep(1)
         
