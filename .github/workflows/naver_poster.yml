@@ -9,6 +9,7 @@ on:
 jobs:
   post-to-naver:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: 저장소 코드 불러오기

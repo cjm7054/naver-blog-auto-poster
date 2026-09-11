@@ -225,23 +225,55 @@ def markdown_to_naver_html(md_text: str) -> str:
 
 def get_signal_bz_trends(driver):
     print("Fetching today's top 10 real-time search trends from Signal.bz...")
+    trends = []
     
     try:
         driver.get("https://signal.bz/news")
-        time.sleep(3) # Vue.js 렌더링 대기
+        time.sleep(4) # Vue.js 렌더링 대기
         
-        trends = []
-        rank_elements = driver.find_elements(By.CSS_SELECTOR, ".rank-text")
-        
-        for i, el in enumerate(rank_elements):
-            if i >= 10:
+        # 1. signal.bz 대기 및 랭킹 텍스트 추출
+        WebDriverWait(driver, 8).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, ".rank-text, .rank_text, a[href*='search']"))
+        )
+        rank_elements = driver.find_elements(By.CSS_SELECTOR, ".rank-text, .rank_text")
+        for el in rank_elements:
+            t = el.text.strip()
+            if t and t not in trends:
+                trends.append(t)
+            if len(trends) >= 10:
                 break
-            trends.append(el.text.strip())
-            
-        return trends
     except Exception as e:
         print(f"Error fetching Signal.bz trends: {e}")
-        return []
+
+    # 2. 만약 Signal.bz가 비어있다면 Google Trends RSS로 즉각 백업 추출
+    if not trends:
+        print("Signal.bz 크롤링 실패 또는 비어있음 -> Google Trends RSS로 실시간 키워드 수집 시도...")
+        try:
+            import urllib.request
+            import xml.etree.ElementTree as ET
+            req = urllib.request.Request(
+                "https://trends.google.co.kr/trending/rss?geo=KR",
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            with urllib.request.urlopen(req, timeout=7) as resp:
+                xml_data = resp.read()
+            root = ET.fromstring(xml_data)
+            for item in root.findall(".//item")[:10]:
+                title_node = item.find("title")
+                if title_node is not None and title_node.text:
+                    k = title_node.text.strip()
+                    if k and k not in trends:
+                        trends.append(k)
+        except Exception as g_err:
+            print(f"Google Trends RSS 추출 실패: {g_err}")
+
+    # 3. 최후의 비상용 최신 이슈 키워드 보장 (절대 빈 리스트 반환 금지)
+    if not trends:
+        print("비상용 최신 트렌드 키워드 리스트 적용")
+        trends = ["청년도약계좌", "근로장려금", "연말정산 환급금", "기준금리 동결", "국민연금 개혁안"]
+
+    print(f"✅ 최종 실시간 검색어 수집 완료 ({len(trends)}개): {trends[:5]}")
+    return trends
 
 def generate_article_with_gemini(selected_keyword, other_trends, today_str):
     api_key = os.getenv("GEMINI_API_KEY")
@@ -421,9 +453,17 @@ def post_to_naver(driver, title, content, tags=None):
         driver.get(f"https://blog.naver.com/{NAVER_ID}?Redirect=Write")
         time.sleep(3)
         
-        # 로그인이 풀려있어서 로그인 페이지로 튕긴 경우에만 수동 로그인 수행 (로컬 환경 백업용)
+        # 로그인이 풀려있어서 로그인 페이지로 튕긴 경우
         if "nid.naver.com" in driver.current_url:
-            print("로그인이 필요합니다. 로그인을 시도합니다...")
+            print("로그인이 필요합니다. (세션 만료 또는 미로그인 상태 감지)")
+            # GitHub Actions 가상 환경에서는 사용자 직접 캡차 입력이 불가능하므로 장시간 대기하지 않고 즉시 종료
+            if os.getenv("GITHUB_ACTIONS") == "true":
+                print("❌ [GitHub Actions 오류] 네이버 로그인 쿠키(NID_AUT, NID_SES)가 만료되었거나 네이버 보안 캡차가 요구됩니다.")
+                print("GitHub Secrets의 NID_AUT, NID_SES 쿠키를 최신 값으로 갱신해야 합니다.")
+                driver.save_screenshot("login_expired.png")
+                import sys
+                sys.exit(1)
+
             if not NAVER_PW:
                 print("NAVER_PW가 설정되지 않아 수동 로그인을 시도할 수 없습니다.")
                 return
@@ -443,9 +483,8 @@ def post_to_naver(driver, title, content, tags=None):
             # Press ENTER instead of finding the login button
             pw_input.send_keys(Keys.ENTER)
             
-            print("로그인 진행 중... (최초 1회 캡차 알림이 뜨면 브라우저에서 직접 120초 내에 풀어주세요!)")
-            # Wait until we are out of the login page and out of any nid.naver.com security pages
-            WebDriverWait(driver, 120).until(
+            print("로그인 진행 중... (최초 1회 캡차 알림이 뜨면 브라우저에서 직접 60초 내에 풀어주세요!)")
+            WebDriverWait(driver, 60).until(
                 lambda d: "nid.naver.com" not in d.current_url
             )
             time.sleep(2)
@@ -463,25 +502,36 @@ def post_to_naver(driver, title, content, tags=None):
         except:
             print("mainFrame이 없습니다. 바로 에디터 요소 접근을 시도합니다.")
             
-        time.sleep(5)
+        time.sleep(4)
         
-        # 3. Close popups if any exist (e.g., auto-save restore)
+        # 3. 팝업, 작성 중이던 글 복구 확인창, 라이프로그 캠페인/템플릿 팝업 닫기
         try:
+            # 취소 버튼 닫기 (작성 중인 글이 있습니다 복구 취소)
             cancel_btns = driver.find_elements(By.XPATH, "//button[contains(text(), '취소') or contains(@class, 'cancel')]")
             for btn in cancel_btns:
                 if btn.is_displayed():
                     btn.click()
                     time.sleep(1)
-        except:
+        except Exception:
+            pass
+
+        try:
+            # 템플릿/캠페인 팝업 닫기 (닫기 버튼)
+            close_btns = driver.find_elements(By.XPATH, "//button[contains(text(), '닫기') or contains(@class, 'close')]")
+            for btn in close_btns:
+                if btn.is_displayed():
+                    btn.click()
+                    time.sleep(0.5)
+        except Exception:
             pass
             
         try:
-            # 도움말 팝업 닫기 (우측 팝업)
+            # 도움말 팝업 닫기 (우측 패널)
             help_close_btn = driver.find_element(By.CSS_SELECTOR, "button.se-help-panel-close-button")
             if help_close_btn.is_displayed():
                 help_close_btn.click()
-                time.sleep(1)
-        except:
+                time.sleep(0.5)
+        except Exception:
             pass
         
         # 4. Enter Title (제목 입력)
@@ -498,7 +548,7 @@ def post_to_naver(driver, title, content, tags=None):
         ActionChains(driver).move_to_element(title_element).click().perform()
         time.sleep(1)
         
-        # 기존 텍스트 삭제 및 새 제목 입력
+        # 기존 제목 텍스트 완전히 삭제 후 새 제목 입력
         ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
         time.sleep(0.5)
         pyperclip.copy(title)
@@ -507,11 +557,11 @@ def post_to_naver(driver, title, content, tags=None):
         
         # 5. Enter Content (본문 입력)
         print("본문 입력창을 찾는 중...")
-        # 스마트에디터 ONE의 본문 기본 안내문구: '글감과 함께 나의 일상을 기록해보세요!'
+        # 스마트에디터 ONE의 본문 기본 안내문구 또는 메인 컨테이너
         try:
             body_element = wait.until(EC.element_to_be_clickable((
                 By.XPATH,
-                "//*[contains(text(), '일상을 기록해보세요') or contains(text(), '글감과 함께')] | //div[contains(@class, 'se-main-container')]//p[contains(@class, 'se-text-paragraph')]"
+                "//*[contains(text(), '일상을 기록해보세요') or contains(text(), '글감과 함께')] | //div[contains(@class, 'se-main-container')]//p[contains(@class, 'se-text-paragraph')] | //div[contains(@class, 'se-main-container')]"
             )))
         except Exception:
             body_element = driver.find_element(By.XPATH, "//div[contains(@class, 'se-component-content')]//p | //div[contains(@class, 'se-main-container')]//p")
@@ -520,7 +570,9 @@ def post_to_naver(driver, title, content, tags=None):
         ActionChains(driver).move_to_element(body_element).click().perform()
         time.sleep(1)
         
-        # 기존 본문 삭제 후 새 본문 내용 붙여넣기 (HTML 서식 & 볼드 & 글자크기 적용)
+        # 기본 템플릿 컴포넌트(라이프로그 기본 서식 등)가 본문에 남아있지 않도록 전체 선택 후 확실하게 삭제
+        ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
+        time.sleep(0.5)
         ActionChains(driver).key_down(Keys.CONTROL).send_keys('a').key_up(Keys.CONTROL).send_keys(Keys.BACKSPACE).perform()
         time.sleep(0.5)
         
