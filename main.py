@@ -223,56 +223,53 @@ def markdown_to_naver_html(md_text: str) -> str:
     return "\n".join(html_lines)
 
 
-def get_signal_bz_trends(driver):
-    print("Fetching today's top 10 real-time search trends from Signal.bz...")
+def get_signal_bz_trends(driver=None):
+    print("실시간 급상승 트렌드 키워드 수집 중 (Google Trends & Signal API)...", flush=True)
     trends = []
     
+    # 1. 초고속 백업망: Google Trends RSS (0.5초 이내 완료, 브라우저 미사용으로 무한 대기 원천 차단)
     try:
-        driver.get("https://signal.bz/news")
-        time.sleep(4) # Vue.js 렌더링 대기
-        
-        # 1. signal.bz 대기 및 랭킹 텍스트 추출
-        WebDriverWait(driver, 8).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, ".rank-text, .rank_text, a[href*='search']"))
+        import urllib.request
+        import xml.etree.ElementTree as ET
+        req = urllib.request.Request(
+            "https://trends.google.co.kr/trending/rss?geo=KR",
+            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
         )
-        rank_elements = driver.find_elements(By.CSS_SELECTOR, ".rank-text, .rank_text")
-        for el in rank_elements:
-            t = el.text.strip()
-            if t and t not in trends:
-                trends.append(t)
-            if len(trends) >= 10:
-                break
-    except Exception as e:
-        print(f"Error fetching Signal.bz trends: {e}")
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            xml_data = resp.read()
+        root = ET.fromstring(xml_data)
+        for item in root.findall(".//item")[:10]:
+            title_node = item.find("title")
+            if title_node is not None and title_node.text:
+                k = title_node.text.strip()
+                if k and k not in trends:
+                    trends.append(k)
+        if trends:
+            print(f"✅ Google Trends 실시간 키워드 수집 성공 ({len(trends)}개): {trends[:5]}", flush=True)
+            return trends
+    except Exception as g_err:
+        print(f"Google Trends RSS 확인 알림: {g_err}", flush=True)
 
-    # 2. 만약 Signal.bz가 비어있다면 Google Trends RSS로 즉각 백업 추출
-    if not trends:
-        print("Signal.bz 크롤링 실패 또는 비어있음 -> Google Trends RSS로 실시간 키워드 수집 시도...")
-        try:
-            import urllib.request
-            import xml.etree.ElementTree as ET
-            req = urllib.request.Request(
-                "https://trends.google.co.kr/trending/rss?geo=KR",
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
-            with urllib.request.urlopen(req, timeout=7) as resp:
-                xml_data = resp.read()
-            root = ET.fromstring(xml_data)
-            for item in root.findall(".//item")[:10]:
-                title_node = item.find("title")
-                if title_node is not None and title_node.text:
-                    k = title_node.text.strip()
-                    if k and k not in trends:
-                        trends.append(k)
-        except Exception as g_err:
-            print(f"Google Trends RSS 추출 실패: {g_err}")
+    # 2. 만약 Google Trends가 안 될 경우 Signal.bz HTTP 파싱
+    try:
+        import requests
+        from bs4 import BeautifulSoup
+        res = requests.get("https://signal.bz/news", headers={"User-Agent": "Mozilla/5.0"}, timeout=4)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            for el in soup.select(".rank-text, .rank_text")[:10]:
+                t = el.get_text().strip()
+                if t and t not in trends:
+                    trends.append(t)
+            if trends:
+                print(f"✅ Signal.bz 실시간 키워드 수집 성공 ({len(trends)}개): {trends[:5]}", flush=True)
+                return trends
+    except Exception as s_err:
+        print(f"Signal.bz HTTP 요청 알림: {s_err}", flush=True)
 
-    # 3. 최후의 비상용 최신 이슈 키워드 보장 (절대 빈 리스트 반환 금지)
-    if not trends:
-        print("비상용 최신 트렌드 키워드 리스트 적용")
-        trends = ["청년도약계좌", "근로장려금", "연말정산 환급금", "기준금리 동결", "국민연금 개혁안"]
-
-    print(f"✅ 최종 실시간 검색어 수집 완료 ({len(trends)}개): {trends[:5]}")
+    # 3. 최후의 비상용 트렌드 키워드 (절대 빈 리스트 반환 금지 및 대기 시간 0초)
+    trends = ["청년도약계좌", "근로장려금", "연말정산 환급금", "기준금리 동결", "국민연금 개혁안"]
+    print(f"✅ 비상용 트렌드 키워드 리스트 즉시 적용: {trends}", flush=True)
     return trends
 
 def generate_article_with_gemini(selected_keyword, other_trends, today_str):
@@ -333,11 +330,11 @@ def generate_article_with_gemini(selected_keyword, other_trends, today_str):
         print(f"Gemini API 생성 중 오류 또는 미설정: {e}. 고품질 단독 심층 리치 원고로 대체합니다.")
         return None, None, []
 
-def get_blog_post(driver):
+def get_blog_post(driver=None):
     try:
         trends = get_signal_bz_trends(driver)
         if not trends:
-            print("트렌드 키워드를 찾지 못했습니다.")
+            print("트렌드 키워드를 찾지 못했습니다.", flush=True)
             return None, None, []
             
         today = datetime.now().strftime("%Y년 %m월 %d일 %H시")
@@ -345,12 +342,12 @@ def get_blog_post(driver):
         # 🎯 실시간 10개 키워드 중 가장 화제성이 높은 '1개'를 선정하여 단독 심층 작성!
         selected_keyword = trends[0]
         other_trends = trends[1:5]
-        print(f"🎯 실시간 10개 키워드 중 오늘의 단독 포스팅 주제 선정: [{selected_keyword}]")
+        print(f"🎯 실시간 10개 키워드 중 오늘의 단독 포스팅 주제 선정: [{selected_keyword}]", flush=True)
         
         # 1. Gemini AI를 통한 1개 주제 집중 1,800자+ 단독 심층 원고 생성 시도
         ai_title, ai_content, ai_tags = generate_article_with_gemini(selected_keyword, other_trends, today)
         if ai_title and ai_content and len(ai_content) > 1200:
-            print(f"Gemini AI를 통해 [{selected_keyword}] 단독 심층 원고({len(ai_content)}자)가 성공적으로 생성되었습니다!")
+            print(f"Gemini AI를 통해 [{selected_keyword}] 단독 심층 원고({len(ai_content)}자)가 성공적으로 생성되었습니다!", flush=True)
             return ai_title, ai_content, ai_tags
             
         # 2. AI 키 미설정 시에도 [선정된 1개 키워드]에 집중하여 1,800자 이상 작성되는 풍성한 단독 심층 원고
@@ -827,14 +824,15 @@ def init_driver():
     return webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 
 if __name__ == "__main__":
-    print("--- Naver Blog 포스팅 시작 ---")
+    print("--- Naver Blog 포스팅 시작 ---", flush=True)
     driver = None
     try:
-        driver = init_driver()
-        title, content, tags = get_blog_post(driver)
+        # 1. 브라우저를 띄우기 전에 콘텐츠(트렌드 수집 + Gemini AI 작성)를 먼저 즉시 완료
+        print("1단계: 실시간 트렌드 분석 및 고품질 블로그 원고 생성 중...", flush=True)
+        title, content, tags = get_blog_post(driver=None)
         
         if not title or not content:
-            print("❌ 콘텐츠 생성 실패.")
+            print("❌ 콘텐츠 생성 실패.", flush=True)
             import sys
             sys.exit(1)
 
@@ -844,25 +842,27 @@ if __name__ == "__main__":
         from adpost_validator import AdPostValidator
         is_passed, issues, stats = AdPostValidator.validate(title, content, tags)
 
-        print("\n" + "=" * 50)
-        print("🔍 [네이버 애드포스트 심사 적합성 자동 검증]")
-        print(f" - 글자 수(공백 제외): {stats.get('char_count_no_space')}자 (필수 기준: 1,200자 이상)")
-        print(f" - 소제목(##) 개수: {stats.get('subheading_count')}개 (필수 기준: 2개 이상)")
-        print(f" - 해시태그 개수: {stats.get('tag_count')}개 (필수 기준: 3개 이상)")
-        print(f" - 정보성(Q&A/체크리스트): {'포함' if stats.get('has_qa_or_checklist') else '미포함'}")
+        print("\n" + "=" * 50, flush=True)
+        print("🔍 [네이버 애드포스트 심사 적합성 자동 검증]", flush=True)
+        print(f" - 글자 수(공백 제외): {stats.get('char_count_no_space')}자 (필수 기준: 1,200자 이상)", flush=True)
+        print(f" - 소제목(##) 개수: {stats.get('subheading_count')}개 (필수 기준: 2개 이상)", flush=True)
+        print(f" - 해시태그 개수: {stats.get('tag_count')}개 (필수 기준: 3개 이상)", flush=True)
+        print(f" - 정보성(Q&A/체크리스트): {'포함' if stats.get('has_qa_or_checklist') else '미포함'}", flush=True)
 
         if not is_passed:
-            print("\n❌ [검증 실패] 애드포스트 승인 기준에 미달하여 블로그 포스팅을 즉시 중단합니다:")
+            print("\n❌ [검증 실패] 애드포스트 승인 기준에 미달하여 블로그 포스팅을 즉시 중단합니다:", flush=True)
             for issue in issues:
-                print(f"  * {issue}")
-            print("애드포스트 심사에 불이익을 방지하기 위해 발행을 차단했습니다.")
+                print(f"  * {issue}", flush=True)
+            print("애드포스트 심사에 불이익을 방지하기 위해 발행을 차단했습니다.", flush=True)
             import sys
             sys.exit(1)
 
-        print("✅ [검증 통과] 100% 애드포스트 승인 최적화 검증 완료! 블로그에 안전하게 공개 발행합니다.")
-        print("=" * 50 + "\n")
+        print("✅ [검증 통과] 100% 애드포스트 승인 최적화 검증 완료!", flush=True)
+        print("=" * 50 + "\n", flush=True)
 
-        # 검증 통과한 경우에만 네이버 블로그 발행 진행
+        # 2. 원고가 완벽하게 준비된 상태에서만 브라우저를 기동하여 즉시 네이버에 등록
+        print("2단계: 브라우저 실행 및 네이버 블로그 자동 등록 시작...", flush=True)
+        driver = init_driver()
         post_to_naver(driver, title, content, tags)
 
     finally:

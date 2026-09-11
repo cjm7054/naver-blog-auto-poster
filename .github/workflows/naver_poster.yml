@@ -41,7 +41,7 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         GITHUB_ACTIONS: "true"
       run: |
-        xvfb-run -a python main.py
+        xvfb-run -a python -u main.py
 
     - name: 에러 스크린샷 및 소스코드 업로드
       if: failure()
