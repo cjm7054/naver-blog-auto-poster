@@ -85,73 +85,141 @@ def copy_to_clipboard_rich(plain_text: str, html_content: str):
 
 def markdown_to_naver_html(md_text: str) -> str:
     """
-    마크다운 텍스트를 네이버 스마트에디터 ONE이 가장 미려하게 인식하는 리치 HTML로 변환합니다.
-    - ## 소제목 -> 큰 폰트(22px), 볼드, 여백, 세련된 하단 밑줄
-    - ### 소제목 -> 중형 폰트(18px), 볼드
-    - **강조 문장** -> <strong style="font-weight:bold; color:#03c75a;"> (네이버 그린 또는 진한 볼드)
-    - --- 구분선 -> 깔끔한 hr 구분선
-    - Q&A / 체크리스트 -> 박스형 스타일
+    네이버 공식 캠페인/매거진(라이프로그) 스타일의 프리미엄 템플릿으로 변환합니다.
+    - 소제목1 (##): 중앙 정렬, 큰 폰트(24px), 볼드, 넉넉한 여백
+    - 서브 소제목 (### 또는 Episode): 상단 컬러 배지(Sub-tag) + 19px 굵은 타이틀
+    - 인용구/핵심 메시지 (따옴표 또는 >): 감성 인용구 스타일 (“...”) + 중앙 정렬 이탤릭
+    - 체크포인트/Q&A: 세련된 소프트 박스 (라운드 코너, 부드러운 배경색, 포인트 컬러)
+    - 본문 문단: 가독성 높은 16px, 1.8 줄간격, 넉넉한 단락 간격
     """
     lines = md_text.split("\n")
     html_lines = []
     
+    # 템플릿 최상단 컨테이너 시작
+    html_lines.append('<div style="font-family: \'Nanum Gothic\', \'Apple SD Gothic Neo\', sans-serif; color: #2b2b2b; max-width: 720px; margin: 0 auto; line-height: 1.85;">')
+    
+    in_quote_block = False
+    quote_buffer = []
+
     for line in lines:
         stripped = line.strip()
+        
+        # 빈 줄 처리
         if not stripped:
-            html_lines.append('<p style="margin: 10px 0; line-height: 1.8;">&nbsp;</p>')
+            if in_quote_block:
+                quote_text = "<br>".join(quote_buffer)
+                html_lines.append(
+                    f'<div style="text-align: center; margin: 35px auto; padding: 25px 20px; max-width: 580px; position: relative;">'
+                    f'<div style="font-size: 36px; color: #03c75a; font-family: serif; line-height: 1; margin-bottom: 8px;">“</div>'
+                    f'<p style="font-size: 16px; color: #444; line-height: 1.9; font-style: italic; margin: 0; word-break: keep-all;">{quote_text}</p>'
+                    f'<div style="font-size: 36px; color: #03c75a; font-family: serif; line-height: 1; margin-top: 8px;">”</div>'
+                    f'</div>'
+                )
+                quote_buffer = []
+                in_quote_block = False
+            else:
+                html_lines.append('<p style="margin: 12px 0;">&nbsp;</p>')
             continue
             
-        # 구분선 (--- 또는 ***)
+        # 마크다운 인용구 (>)
+        if stripped.startswith(">"):
+            in_quote_block = True
+            clean_quote = stripped.lstrip(">").strip()
+            clean_quote = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', clean_quote)
+            quote_buffer.append(clean_quote)
+            continue
+        elif in_quote_block:
+            quote_text = "<br>".join(quote_buffer)
+            html_lines.append(
+                f'<div style="text-align: center; margin: 35px auto; padding: 25px 20px; max-width: 580px; position: relative;">'
+                f'<div style="font-size: 36px; color: #03c75a; font-family: serif; line-height: 1; margin-bottom: 8px;">“</div>'
+                f'<p style="font-size: 16px; color: #444; line-height: 1.9; font-style: italic; margin: 0; word-break: keep-all;">{quote_text}</p>'
+                f'<div style="font-size: 36px; color: #03c75a; font-family: serif; line-height: 1; margin-top: 8px;">”</div>'
+                f'</div>'
+            )
+            quote_buffer = []
+            in_quote_block = False
+
+        # 구분선 (--- 또는 ***) -> 매거진 스타일 센터 디바이더
         if stripped in ["---", "***", "___"]:
-            html_lines.append('<hr style="border: 0; height: 1px; background: #e0e0e0; margin: 25px 0;">')
+            html_lines.append(
+                '<div style="text-align: center; margin: 40px 0 35px 0;">'
+                '<span style="display: inline-block; width: 40px; height: 3px; background-color: #03c75a; border-radius: 2px;"></span>'
+                '</div>'
+            )
             continue
             
-        # 소제목 1 (##)
+        # 대주제 / 소제목 1 (##) -> 중앙 정렬 매거진 헤드라인
         if stripped.startswith("## "):
             title_text = stripped[3:].strip()
-            # 볼드 마크다운 제거
-            title_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', title_text)
+            title_text = re.sub(r'\*\*(.*?)\*\*', r'\1', title_text)
             html_lines.append(
-                f'<h2 style="font-size: 22px; font-weight: bold; color: #111; border-left: 5px solid #03c75a; padding-left: 12px; margin: 30px 0 15px 0; line-height: 1.4;">{title_text}</h2>'
+                f'<div style="text-align: center; margin: 45px 0 25px 0;">'
+                f'<h2 style="font-size: 24px; font-weight: 800; color: #111; letter-spacing: -0.5px; margin: 0; line-height: 1.4; word-break: keep-all;">'
+                f'{title_text}'
+                f'</h2>'
+                f'</div>'
             )
             continue
             
-        # 소제목 2 (###)
+        # 중주제 / 소제목 2 (###) -> 매거진 에피소드 / 섹션 카드 헤더
         if stripped.startswith("### "):
             title_text = stripped[4:].strip()
-            title_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', title_text)
+            title_text = re.sub(r'\*\*(.*?)\*\*', r'\1', title_text)
             html_lines.append(
-                f'<h3 style="font-size: 18px; font-weight: bold; color: #222; margin: 20px 0 10px 0; line-height: 1.4;">📌 {title_text}</h3>'
+                f'<div style="margin: 35px 0 15px 0; padding-bottom: 8px; border-bottom: 1px solid #f0f0f0;">'
+                f'<span style="display: inline-block; font-size: 13px; font-weight: bold; color: #03c75a; background-color: #e8f8ef; padding: 3px 10px; border-radius: 12px; margin-bottom: 8px;">Point</span>'
+                f'<h3 style="font-size: 19px; font-weight: 700; color: #222; margin: 0; line-height: 1.4; word-break: keep-all;">{title_text}</h3>'
+                f'</div>'
             )
             continue
             
-        # Q&A 질문 패턴 (Q1., **Q1., Q., 질문)
+        # Q&A 질문 패턴 (Q1., Q., 질문)
         if re.match(r'^\*?\*?Q\d*[\.:]', stripped):
             styled_q = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', stripped)
             html_lines.append(
-                f'<div style="background-color: #f7f9fa; border-left: 4px solid #03c75a; padding: 12px 16px; margin: 15px 0 8px 0; font-size: 16px; font-weight: bold; color: #1e1e1e;">💡 {styled_q}</div>'
+                f'<div style="background: linear-gradient(135deg, #f8fbf9 0%, #f4f7f5 100%); border: 1px solid #e1eee5; border-radius: 10px; padding: 16px 20px; margin: 25px 0 10px 0;">'
+                f'<div style="font-size: 16px; font-weight: bold; color: #028f40; margin-bottom: 6px;">💡 {styled_q}</div>'
             )
             continue
             
-        # Q&A 답변 패턴 (A., **A., 답변)
+        # Q&A 답변 패턴 (A., 답변)
         if re.match(r'^\*?\*?A[\.:]', stripped):
             styled_a = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', stripped)
             html_lines.append(
-                f'<p style="margin: 8px 0 16px 0; padding-left: 10px; font-size: 15px; color: #444; line-height: 1.8;">{styled_a}</p>'
+                f'<p style="margin: 0; font-size: 15px; color: #4a4a4a; line-height: 1.85; padding-left: 2px;">{styled_a}</p>'
+                f'</div>'
             )
             continue
             
-        # 일반 본문 문단 처리
+        # 일반 본문 처리
         content_line = stripped
-        # 볼드 변환: **텍스트** -> <strong style="font-weight: bold; color: #000;">
-        content_line = re.sub(r'\*\*(.*?)\*\*', r'<strong style="font-weight: bold; color: #111;">\1</strong>', content_line)
+        # 볼드 강조 변환 (**텍스트** -> 진하고 선명한 검정 볼드 + 약간의 대비)
+        content_line = re.sub(r'\*\*(.*?)\*\*', r'<b style="font-weight: 700; color: #111; background: linear-gradient(to top, #e6f9ed 40%, transparent 40%); padding: 0 2px;">\1</b>', content_line)
         
         # 번호 매기기 리스트 (1. 2. 3.)
         if re.match(r'^\d+\.\s+', content_line):
-            html_lines.append(f'<p style="margin: 8px 0; font-size: 15px; line-height: 1.8; color: #333; padding-left: 5px;">• {content_line}</p>')
+            html_lines.append(
+                f'<div style="display: flex; margin: 10px 0; padding: 10px 14px; background-color: #fafafa; border-radius: 8px;">'
+                f'<p style="margin: 0; font-size: 15px; line-height: 1.8; color: #333;">{content_line}</p>'
+                f'</div>'
+            )
         else:
-            html_lines.append(f'<p style="margin: 12px 0; font-size: 15px; line-height: 1.8; color: #333;">{content_line}</p>')
+            html_lines.append(f'<p style="margin: 14px 0; font-size: 16px; line-height: 1.85; color: #383838; letter-spacing: -0.2px; word-break: keep-all;">{content_line}</p>')
             
+    # 남아있는 인용구 닫기
+    if in_quote_block:
+        quote_text = "<br>".join(quote_buffer)
+        html_lines.append(
+            f'<div style="text-align: center; margin: 35px auto; padding: 25px 20px; max-width: 580px;">'
+            f'<div style="font-size: 36px; color: #03c75a; font-family: serif; line-height: 1; margin-bottom: 8px;">“</div>'
+            f'<p style="font-size: 16px; color: #444; line-height: 1.9; font-style: italic; margin: 0; word-break: keep-all;">{quote_text}</p>'
+            f'<div style="font-size: 36px; color: #03c75a; font-family: serif; line-height: 1; margin-top: 8px;">”</div>'
+            f'</div>'
+        )
+
+    # 맺음말 카드형 박스
+    html_lines.append('</div>')
     return "\n".join(html_lines)
 
 
@@ -195,23 +263,26 @@ def generate_article_with_gemini(selected_keyword, other_trends, today_str):
 [작성 및 네이버 애드포스트 심사 통과 절대 규칙 - 100% 필수 준수]:
 1. 글자 수: 공백 제외 반드시 1,600자 ~ 2,300자 이상으로 매우 상세하고 깊이 있게 작성하세요. (다른 키워드 10개 나열하는 글이 아니라, 오직 [{selected_keyword}] 하나에만 집중된 완성형 단독 칼럼/정보글입니다!)
 2. 절대 단순 나열식 리스트 글을 쓰지 마세요.
-3. [가독성 & 강조 최적화 (매우 중요)]:
-   - 독자가 스크롤을 내리며 빠르게 핵심을 파악할 수 있도록, **각 문단마다 가장 중요한 핵심 문장, 핵심 수치, 핵심 결론에는 반드시 마크다운 볼드(**굵은 글씨**)를 적극 적용**하세요!
-   - 밋밋한 줄글 나열을 지양하고, 눈에 쏙 들어오는 소제목(##, ###)과 중요한 팩트(**핵심 문장**)를 시각적으로 뚜렷하게 부각시키세요.
+3. [가독성 & 템플릿 디자인 최적화 (네이버 공식 매거진/라이프로그 스타일)]:
+   - **감성 인용구 블록**: 서론 직후나 본문 중간에 이 이슈가 던지는 가장 중요한 메시지/화두를 마크다운 인용구(`> ...`) 1~2문장으로 작성하세요. (중앙 정렬 감성 큰따옴표 박스로 자동 렌더링됩니다)
+   - **중앙 헤드라인 소제목(##)**: 큰 흐름을 짚어주는 중심 제목으로 활용하세요.
+   - **에피소드/포인트 소제목(###)**: 상세 분석 단락에는 `### 1. 첫 번째 핵심 분석`, `### 2. 두 번째 핵심 분석` 형식으로 작성하세요. (포인트 배지와 카드 헤더로 변환됩니다)
+   - **핵심 문장 볼드 강조**: 독자가 스크롤을 내리며 빠르게 핵심을 파악할 수 있도록, **각 문단마다 가장 중요한 문장과 핵심 수치에는 반드시 마크다운 볼드(**굵은 글씨**)를 적용**하세요.
 4. 블로그 포스팅 구성:
-   - [도입부 (서론)]: 왜 지금 [{selected_keyword}]이(가) 대중들의 폭발적인 관심을 받고 있는지, 배경과 이슈의 발단을 흥미진진하게 서술.
-   - [본문 소제목 1 (##)]: 사건/이슈의 구체적인 전개 과정과 핵심 팩트 총정리
-   - [본문 소제목 2 (##)]: 대중들의 여론 반응과 온라인/업계의 다양한 시각 분석
+   - [도입부 (서론)]: 왜 지금 [{selected_keyword}]이(가) 대중들의 폭발적인 관심을 받고 있는지 서술.
+   - [감성 인용구 (>)]: 핵심 화두를 담은 1~2문장 인용구.
+   - [본문 소제목 1 (##)]: 사건/이슈의 구체적인 전개 과정과 핵심 팩트 총정리 (### 세부 포인트 포함)
+   - [본문 소제목 2 (##)]: 대중들의 여론 반응과 온라인/업계의 다양한 시각 분석 (### 세부 포인트 포함)
    - [본문 소제목 3 (##)]: 향후 전망 및 우리가 주목해야 할 핵심 시사점/체크포인트
    - [FAQ 섹션 (##)]: 독자들이 가장 궁금해할 만한 핵심 질문 3가지와 명쾌하고 상세한 답변 (Q1, Q2, Q3)
-   - [결론 (##)]: 전체 내용을 한눈에 요약하고, 독자에게 의견을묻는 소통형 맺음말 및 공감/이웃추가 유도.
+   - [결론 (##)]: 전체 내용을 한눈에 요약하고 공감/이웃추가 유도.
 5. 문체: 부드럽고 가독성 높은 친절한 존댓말 (~합니다, ~해보세요, ~알아보았습니다).
 6. 해시태그: 주제와 밀접한 고효율 태그 10개 추출.
 
 [출력 형식 - 반드시 유효한 JSON 형식만 반환]:
 {{
   "title": "{selected_keyword} 논란 및 핵심 쟁점 총정리! 화제가 된 진짜 이유와 향후 전망",
-  "content": "본문 전체 내용 (마크다운 ## 소제목 및 중요 문장 **볼드 강조** 적극 활용)",
+  "content": "본문 전체 내용 (마크다운 ## 소제목, ### 세부 포인트, > 인용구, 중요 문장 **볼드 강조** 적극 활용)",
   "tags": ["#{selected_keyword.replace(' ', '')}", "#{selected_keyword.replace(' ', '')}이유", "#실시간이슈", "#핫토픽", "#오늘의이슈", "#트렌드분석", "#이슈총정리", "#네이버블로그", "#정보공유", "#이슈체크"]
 }}
 """
@@ -261,6 +332,8 @@ def get_blog_post(driver):
 
 그래서 오늘은 단편적인 찌라시나 자극적인 소문을 배제하고, **지금까지 공식적으로 확인된 객관적인 사실 관계와 대중들의 여론 반응, 그리고 앞으로의 파급 효과**까지 '{selected_keyword}'의 모든 것을 완벽하게 짚어드리겠습니다!
 
+> 기록이 쌓이면 내가 된다. 수많은 정보 속에서 본질을 꿰뚫는 정확한 시선과 기록이 당신의 일상과 지식을 더욱 깊이 있게 만들어 줍니다.
+
 ---
 
 ## 1. '{selected_keyword}', 도대체 무슨 일일까요? 발단과 배경 총정리
@@ -283,7 +356,7 @@ def get_blog_post(driver):
 ### 쟁점 2: 구조적인 문제인가, 개인의 책임인가
 단순히 특정 개인만의 문제가 아니라, **우리 사회와 조직 문화 내에 만연해 있던 구조적 모순이 표출된 결과**라는 분석도 강력한 설득력을 얻고 있습니다. 이번 기회를 통해 보다 **근본적인 재발 방지 가이드라인이 마련되어야 한다**는 여론이 힘을 얻고 있습니다.
 
-### 셋째: 향후 미칠 파급력과 선례
+### 쟁점 3: 향후 미칠 파급력과 선례
 이번 이슈가 앞으로 유사한 사안들에 어떤 기준점과 선례를 남기게 될지에 대해 각계 전문가들의 이목이 쏠리고 있습니다. 결과에 따라 관련 업계의 관행이나 법적 제도 개선으로까지 이어질 가능성이 높다는 관측이 지배적입니다.
 
 ---
