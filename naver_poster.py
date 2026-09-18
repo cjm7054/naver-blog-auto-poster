@@ -170,9 +170,23 @@ class NaverPoster:
             # 4. 발행 버튼 또는 임시저장 버튼 클릭
             if publish:
                 print("[진행] 네이버 블로그에 공식 발행(Publish)을 진행합니다.")
-                publish_btn = WebDriverWait(self.driver, 30).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'btn_publish') or contains(., '발행')]"))
-                )
+                
+                # '발행' 버튼 탐색 (모바일용 숨겨진 버튼에 EC.element_to_be_clickable이 막히는 현상 방지)
+                publish_btn = None
+                for _ in range(30):
+                    btns = self.driver.find_elements(By.XPATH, "//*[(self::button or self::a or self::span) and (contains(@class, 'publish') or contains(., '발행'))]")
+                    for btn in btns:
+                        # 텍스트가 짧고 화면에 보이는 요소만 선택
+                        if btn.is_displayed() and "발행" in btn.text and len(btn.text) < 10:
+                            publish_btn = btn
+                            break
+                    if publish_btn:
+                        break
+                    time.sleep(1)
+                
+                if not publish_btn:
+                    raise Exception("화면에 활성화된 '발행' 버튼(우측 상단)을 찾을 수 없습니다.")
+                    
                 self.driver.execute_script("arguments[0].click();", publish_btn)
                 time.sleep(3)
 
