@@ -138,32 +138,26 @@ class NaverPoster:
             print(f"[진행] 제목 입력 중: {title}")
             from selenium.webdriver.common.action_chains import ActionChains
             
-            # 스마트에디터 ONE의 제목 영역 클릭 및 붙여넣기
-            self.driver.execute_script("""
-                var titleEl = document.querySelector('.se-documentTitle p, .se-documentTitle textarea, .se-title-text, .se-documentTitle');
-                if (titleEl) {
-                    titleEl.focus();
-                    titleEl.click();
-                }
-            """)
-            time.sleep(1)
+            title_placeholder = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "span.__se_placeholder"))
+            )
+            # 플레이스홀더를 직접 클릭하여 포커스
+            title_placeholder.click()
+            time.sleep(0.5)
+            # 클립보드 복사 후 붙여넣기 (안정적인 한글 입력)
             pyperclip.copy(title)
             ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
             time.sleep(1)
 
             # 3. 본문 입력
             print("[진행] 본문 내용 입력 중...")
-            ActionChains(self.driver).send_keys(Keys.TAB).perform()
+            content_area = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, ".se-component.se-text, div.se-content"))
+            )
+            # 네이티브 클릭으로 포커스
+            content_area.click()
             time.sleep(0.5)
-            # 본문 포커스 직접 부여
-            self.driver.execute_script("""
-                var contentEl = document.querySelector('.se-main-container [contenteditable="true"], .se-component-content [contenteditable="true"], .se-main-container');
-                if (contentEl) {
-                    contentEl.focus();
-                    contentEl.click();
-                }
-            """)
-            time.sleep(1)
+            # 클립보드 복사 후 붙여넣기 (안정적인 한글 입력)
             pyperclip.copy(content)
             ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
             time.sleep(2)
