@@ -187,10 +187,31 @@ class NaverPoster:
                 if not publish_btn:
                     raise Exception("화면에 활성화된 '발행' 버튼(우측 상단)을 찾을 수 없습니다.")
                     
-                self.driver.execute_script("arguments[0].click();", publish_btn)
-                time.sleep(3)
-
-                # 전체공개(Public) 라디오 버튼 강제 활성화
+                print(f"✅ 우측 상단 발행 버튼(태그명: {publish_btn.tag_name}, 클래스: {publish_btn.get_attribute('class')}) 클릭을 시도합니다.")
+                try:
+                    publish_btn.click()
+                except Exception:
+                    self.driver.execute_script("arguments[0].click();", publish_btn)
+                
+                # 팝업 레이어가 뜰 때까지 대기
+                popup_opened = False
+                for _ in range(10):
+                    time.sleep(0.5)
+                    try:
+                        layer = self.driver.find_element(By.CSS_SELECTOR, "div.layer_popup__MFPwH, div[class*='layer_publish'], div[class*='publish_layer']")
+                        if layer.is_displayed():
+                            popup_opened = True
+                            print("✅ 발행 팝업 레이어가 성공적으로 열렸습니다.")
+                            break
+                    except Exception:
+                        pass
+                        
+                if not popup_opened:
+                    print("⚠️ 발행 팝업 레이어가 정상적으로 열리지 않았을 수 있습니다. 계속 진행합니다.")
+                
+                time.sleep(2)
+                
+                # 팝업 내 자바스크립트 강제 우회 로직 실행
                 print("[진행] 발행 설정을 '전체공개'로 강제 지정합니다...")
                 time.sleep(1)
                 self.driver.execute_script("""
