@@ -109,7 +109,8 @@ def publish_pending_approval_post(count: int = 1, publish_now: bool = True):
             time.sleep(5)
         else:
             print("[실패] 포스팅 실패로 다음 글로 넘어가지 않습니다.")
-            break
+            import sys
+            sys.exit(1)
 
     poster.close()
     print(f"\n[완료] 총 {published_count}개의 글이 네이버 블로그에 포스팅되었습니다.")
