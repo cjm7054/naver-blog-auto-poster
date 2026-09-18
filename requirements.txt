@@ -5,3 +5,5 @@ beautifulsoup4
 python-dotenv
 pyperclip
 google-genai
+
+schedule

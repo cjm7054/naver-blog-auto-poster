@@ -10,6 +10,8 @@ jobs:
   post-to-naver:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
 
     steps:
     - name: 저장소 코드 불러오기
@@ -41,7 +43,15 @@ jobs:
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         GITHUB_ACTIONS: "true"
       run: |
-        xvfb-run -a python -u main.py
+        xvfb-run -a python -u main.py --mode publish-approval --count 1
+
+    - name: 변경된 원고 상태 커밋 및 푸시
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add posts_queue/
+        git commit -m "Auto-published a post and updated queue" || echo "No changes to commit"
+        git push
 
     - name: 에러 스크린샷 및 소스코드 업로드
       if: failure()
