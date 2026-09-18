@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
 from webdriver_manager.chrome import ChromeDriverManager
 
 from config import CHROME_PROFILE_DIR, NAVER_BLOG_ID
@@ -171,35 +172,29 @@ class NaverPoster:
             if publish:
                 print("[진행] 네이버 블로그에 공식 발행(Publish)을 진행합니다.")
                 
-                # '발행' 버튼 탐색 (모바일용 숨겨진 버튼에 EC.element_to_be_clickable이 막히는 현상 방지)
-                publish_btn = None
-                for _ in range(30):
-                    btns = self.driver.find_elements(By.XPATH, "//*[(self::button or self::a or self::span) and (contains(@class, 'publish') or contains(., '발행'))]")
-                    for btn in btns:
-                        # 텍스트가 짧고 화면에 보이는 요소만 선택
-                        if btn.is_displayed() and "발행" in btn.text and len(btn.text) < 10:
-                            publish_btn = btn
-                            break
-                    if publish_btn:
-                        break
-                    time.sleep(1)
-                
-                if not publish_btn:
+                # 정확한 발행 버튼 선택자 (우측 상단)
+                try:
+                    publish_btn = WebDriverWait(self.driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-click-area='tpb.publish'], button.publish_btn__v_kS9"))
+                    )
+                except Exception:
                     raise Exception("화면에 활성화된 '발행' 버튼(우측 상단)을 찾을 수 없습니다.")
                     
-                print(f"✅ 우측 상단 발행 버튼(태그명: {publish_btn.tag_name}, 클래스: {publish_btn.get_attribute('class')}) 클릭을 시도합니다.")
+                print(f"✅ 우측 상단 발행 버튼 클릭을 시도합니다.")
                 try:
                     publish_btn.click()
                 except Exception:
-                    self.driver.execute_script("arguments[0].click();", publish_btn)
+                    # 마우스 이벤트 우회 클릭 (React 이벤트 트리거를 위해)
+                    ActionChains(self.driver).move_to_element(publish_btn).click().perform()
                 
-                # 팝업 레이어가 뜰 때까지 대기
+                # 팝업 레이어의 실제 내용(카테고리, 공개설정 등)이 뜰 때까지 대기
                 popup_opened = False
-                for _ in range(10):
-                    time.sleep(0.5)
+                for _ in range(15):
+                    time.sleep(1)
                     try:
-                        layer = self.driver.find_element(By.CSS_SELECTOR, "div.layer_popup__MFPwH, div[class*='layer_publish'], div[class*='publish_layer']")
-                        if layer.is_displayed():
+                        # 팝업 내부에만 있는 텍스트나 요소 확인
+                        content = self.driver.find_elements(By.XPATH, "//*[contains(text(), '카테고리') or contains(text(), '공개설정') or contains(@class, 'layer_publish')]")
+                        if any(c.is_displayed() for c in content):
                             popup_opened = True
                             print("✅ 발행 팝업 레이어가 성공적으로 열렸습니다.")
                             break
@@ -207,7 +202,7 @@ class NaverPoster:
                         pass
                         
                 if not popup_opened:
-                    print("⚠️ 발행 팝업 레이어가 정상적으로 열리지 않았을 수 있습니다. 계속 진행합니다.")
+                    print("⚠️ 발행 팝업 레이어의 내부 요소를 찾지 못했습니다. 팝업이 열리지 않았거나 구조가 다를 수 있습니다.")
                 
                 time.sleep(2)
                 
@@ -295,8 +290,8 @@ class NaverPoster:
                         # React/Vue 이벤트 리스너가 정상 트리거되도록 실제 클릭 시도
                         confirm_btn.click()
                     except Exception:
-                        # ElementNotInteractableException 등이 발생하면 JS로 강제 클릭
-                        self.driver.execute_script("arguments[0].click();", confirm_btn)
+                        # ElementNotInteractableException 등이 발생하면 ActionChains로 강제 클릭
+                        ActionChains(self.driver).move_to_element(confirm_btn).click().perform()
                     
                     print("[진행] 발행 요청을 전송했습니다. 페이지 전환을 대기합니다...")
                     
