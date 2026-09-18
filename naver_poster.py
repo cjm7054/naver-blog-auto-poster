@@ -172,6 +172,10 @@ class NaverPoster:
             if publish:
                 print("[진행] 네이버 블로그에 공식 발행(Publish)을 진행합니다.")
                 
+                # 버튼이 가려지지 않도록 맨 위로 스크롤
+                self.driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+                
                 # 정확한 발행 버튼 선택자 (우측 상단)
                 try:
                     publish_btn = WebDriverWait(self.driver, 10).until(
@@ -182,10 +186,35 @@ class NaverPoster:
                     
                 print(f"✅ 우측 상단 발행 버튼 클릭을 시도합니다.")
                 try:
-                    publish_btn.click()
-                except Exception:
-                    # 마우스 이벤트 우회 클릭 (React 이벤트 트리거를 위해)
+                    # 1. 엔터 키 전송 (키보드 이벤트로 React onClick 트리거)
+                    publish_btn.send_keys(Keys.ENTER)
+                    time.sleep(0.5)
+                except:
+                    pass
+                    
+                try:
+                    # 2. 마우스 액션 체인
                     ActionChains(self.driver).move_to_element(publish_btn).click().perform()
+                    time.sleep(0.5)
+                except:
+                    pass
+                    
+                try:
+                    # 3. 네이티브 Selenium 클릭
+                    publish_btn.click()
+                    time.sleep(0.5)
+                except:
+                    pass
+                    
+                try:
+                    # 4. JS Event Dispatch (React 16+ 합성 이벤트 우회)
+                    self.driver.execute_script("""
+                        var btn = arguments[0];
+                        var evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                        btn.dispatchEvent(evt);
+                    """, publish_btn)
+                except:
+                    pass
                 
                 # 팝업 레이어의 실제 내용(카테고리, 공개설정 등)이 뜰 때까지 대기
                 popup_opened = False
@@ -203,6 +232,7 @@ class NaverPoster:
                         
                 if not popup_opened:
                     print("⚠️ 발행 팝업 레이어의 내부 요소를 찾지 못했습니다. 팝업이 열리지 않았거나 구조가 다를 수 있습니다.")
+                    raise Exception("발행 팝업이 정상적으로 열리지 않았습니다. 더 이상 진행할 수 없습니다.")
                 
                 time.sleep(2)
                 
