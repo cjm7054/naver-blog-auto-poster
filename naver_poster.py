@@ -32,6 +32,7 @@ class NaverPoster:
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
         chrome_options.add_argument("--start-maximized")
+        chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument(
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
         )
@@ -159,12 +160,48 @@ class NaverPoster:
             # 4. 발행 버튼 또는 임시저장 버튼 클릭
             if publish:
                 print("[진행] 네이버 블로그에 공식 발행(Publish)을 진행합니다.")
-                publish_btn = WebDriverWait(self.driver, 10).until(
+                publish_btn = WebDriverWait(self.driver, 30).until(
                     EC.element_to_be_clickable((By.XPATH, "//button[contains(@class, 'btn_publish') or contains(., '발행')]"))
                 )
                 self.driver.execute_script("arguments[0].click();", publish_btn)
                 time.sleep(3)
 
+                # 전체공개(Public) 라디오 버튼 강제 활성화
+                print("[진행] 발행 설정을 '전체공개'로 강제 지정합니다...")
+                time.sleep(1)
+                self.driver.execute_script("""
+                    // 1. 네이버 스마트에디터 ONE의 전체공개 라디오 버튼 직접 검색 및 체크
+                    var labels = Array.from(document.querySelectorAll('label, span, button, div'));
+                    var publicLabel = labels.find(el => el.textContent && el.textContent.trim() === '전체공개');
+                    if (publicLabel) {
+                        publicLabel.click();
+                        var input = publicLabel.querySelector('input') || document.querySelector('input#openType1') || document.querySelector('input[value="1"]');
+                        if (input) {
+                            input.checked = true;
+                            input.dispatchEvent(new Event('change', {bubbles: true}));
+                        }
+                    }
+                    // 2. input 태그 직접 트리거
+                    var radio = document.querySelector('input[name="openType"][value="1"], input#openType1, input[value="public"]');
+                    if (radio) {
+                        radio.checked = true;
+                        radio.click();
+                        radio.dispatchEvent(new Event('change', {bubbles: true}));
+                    }
+                """)
+                time.sleep(1)
+                try:
+                    # 3. Selenium 인터랙션 보강
+                    for sel in ["//label[normalize-space(.)='전체공개']", "//input[@name='openType' and @value='1']", "//*[contains(@class, 'radio') and contains(., '전체공개')]"]:
+                        found = self.driver.find_elements(By.XPATH, sel)
+                        for f in found:
+                            if f.is_displayed():
+                                self.driver.execute_script("arguments[0].click();", f)
+                                print("✅ '전체공개' 라디오 버튼 클릭 성공!")
+                                break
+                except Exception as pub_err:
+                    print(f"전체공개 설정 알림: {pub_err}")
+                
                 # 태그 입력 (발행 레이어 팝업 내)
                 if tags:
                     try:
@@ -225,6 +262,19 @@ class NaverPoster:
 
         except Exception as e:
             print(f"[오류] 포스팅 중 에러 발생: {e}")
+            if self.driver:
+                print("[오류] 현재 페이지 URL:", self.driver.current_url)
+                try:
+                    self.driver.save_screenshot("error_screenshot.png")
+                    print("[알림] 에러 스크린샷이 error_screenshot.png에 저장되었습니다.")
+                except Exception:
+                    pass
+                try:
+                    with open("error_page.html", "w", encoding="utf-8") as f:
+                        f.write(self.driver.page_source)
+                    print("[알림] 에러 페이지 HTML이 error_page.html에 저장되었습니다.")
+                except Exception:
+                    pass
             return False
 
     def _close_popups(self):
