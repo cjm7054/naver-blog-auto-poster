@@ -49,6 +49,17 @@ class NaverPoster:
 
         self.driver.get("https://www.naver.com")
         time.sleep(2)
+        
+        # 환경변수에 로그인 쿠키가 설정되어 있다면 주입 (GitHub Actions 용)
+        nid_aut = os.getenv("NID_AUT")
+        nid_ses = os.getenv("NID_SES")
+        if nid_aut and nid_ses:
+            print("[안내] 환경변수에서 네이버 로그인 쿠키를 발견하여 주입합니다.")
+            self.driver.add_cookie({"name": "NID_AUT", "value": nid_aut, "domain": ".naver.com"})
+            self.driver.add_cookie({"name": "NID_SES", "value": nid_ses, "domain": ".naver.com"})
+            self.driver.refresh()
+            time.sleep(2)
+
         # 네이버 메인에서 로그인 쿠키(NID_AUT, NID_SES) 존재 여부 확인
         cookies = {c["name"]: c["value"] for c in self.driver.get_cookies()}
         if "NID_AUT" in cookies or "NID_SES" in cookies:
