@@ -269,9 +269,32 @@ class NaverPoster:
                             break
                             
                 if confirm_btn:
-                    self.driver.execute_script("arguments[0].click();", confirm_btn)
-                    print("[완료] 글이 성공적으로 발행되었습니다!")
-                    time.sleep(5)
+                    print(f"✅ 최종 발행 확인 버튼(태그명: {confirm_btn.tag_name}, 텍스트: {confirm_btn.text})을 찾았습니다. 클릭을 시도합니다.")
+                    try:
+                        # React/Vue 이벤트 리스너가 정상 트리거되도록 실제 클릭 시도
+                        confirm_btn.click()
+                    except Exception:
+                        # ElementNotInteractableException 등이 발생하면 JS로 강제 클릭
+                        self.driver.execute_script("arguments[0].click();", confirm_btn)
+                    
+                    print("[진행] 발행 요청을 전송했습니다. 페이지 전환을 대기합니다...")
+                    
+                    # 브라우저가 발행을 완료하고 리다이렉트할 때까지 대기 (최대 20초)
+                    # 현재 URL(에디터 URL)에서 다른 URL(발행된 포스트 URL)로 변경되었는지 확인
+                    current_url = self.driver.current_url
+                    success_redirect = False
+                    for _ in range(20):
+                        time.sleep(1)
+                        if self.driver.current_url != current_url:
+                            success_redirect = True
+                            break
+                    
+                    if success_redirect:
+                        print(f"[완료] 글이 성공적으로 발행되었습니다! (새 URL: {self.driver.current_url})")
+                    else:
+                        print("[경고] 발행 버튼을 클릭했으나 20초 내에 페이지가 전환되지 않았습니다. (발행 실패 가능성 있음)")
+                        # 페이지의 경고창이나 에러 메시지가 있는지 확인을 위해 예외 발생 (GitHub Actions에서 스크린샷 캡처 유도)
+                        raise Exception("발행 버튼 클릭 후 페이지가 리다이렉트되지 않았습니다.")
                 else:
                     raise Exception("최종 발행 확인 버튼을 찾을 수 없습니다.")
             else:
