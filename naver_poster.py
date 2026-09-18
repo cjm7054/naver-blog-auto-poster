@@ -162,7 +162,10 @@ class NaverPoster:
             ActionChains(self.driver).key_down(Keys.CONTROL).send_keys('v').key_up(Keys.CONTROL).perform()
             time.sleep(2)
 
-            # 4. 발행 버튼 또는 임시저장 버튼 클릭
+            # 4. 발행 버튼 클릭을 위해 메인 프레임으로 복귀 (iframe을 사용하는 경우 대비)
+            self.driver.switch_to.default_content()
+
+            # 5. 발행 버튼 또는 임시저장 버튼 클릭
             if publish:
                 print("[진행] 네이버 블로그에 공식 발행(Publish)을 진행합니다.")
                 
@@ -179,50 +182,31 @@ class NaverPoster:
                     raise Exception("화면에 활성화된 '발행' 버튼(우측 상단)을 찾을 수 없습니다.")
                     
                 print(f"✅ 우측 상단 발행 버튼 클릭을 시도합니다.")
-                try:
-                    # 1. 엔터 키 전송 (키보드 이벤트로 React onClick 트리거)
-                    publish_btn.send_keys(Keys.ENTER)
-                    time.sleep(0.5)
-                except:
-                    pass
-                    
-                try:
-                    # 2. 마우스 액션 체인
-                    ActionChains(self.driver).move_to_element(publish_btn).click().perform()
-                    time.sleep(0.5)
-                except:
-                    pass
-                    
-                try:
-                    # 3. 네이티브 Selenium 클릭
-                    publish_btn.click()
-                    time.sleep(0.5)
-                except:
-                    pass
-                    
-                try:
-                    # 4. JS Event Dispatch (React 16+ 합성 이벤트 우회)
-                    self.driver.execute_script("""
-                        var btn = arguments[0];
-                        var evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
-                        btn.dispatchEvent(evt);
-                    """, publish_btn)
-                except:
-                    pass
                 
-                # 팝업 레이어의 실제 내용(카테고리, 공개설정 등)이 뜰 때까지 대기
                 popup_opened = False
-                for _ in range(15):
-                    time.sleep(1)
+                click_methods = [
+                    lambda: publish_btn.click(),
+                    lambda: self.driver.execute_script("arguments[0].click();", publish_btn),
+                    lambda: publish_btn.send_keys(Keys.ENTER),
+                    lambda: ActionChains(self.driver).move_to_element(publish_btn).click().perform()
+                ]
+                
+                for i, method in enumerate(click_methods):
                     try:
-                        # 팝업 내부에만 있는 텍스트나 요소 확인
-                        content = self.driver.find_elements(By.XPATH, "//*[contains(text(), '카테고리') or contains(text(), '공개설정') or contains(@class, 'layer_publish')]")
-                        if any(c.is_displayed() for c in content):
-                            popup_opened = True
+                        method()
+                        print(f"  - 클릭 방식 {i+1} 실행 완료")
+                        # 팝업이 열렸는지 최대 3초 대기하며 확인
+                        for _ in range(3):
+                            time.sleep(1)
+                            content = self.driver.find_elements(By.XPATH, "//*[contains(text(), '카테고리') or contains(text(), '공개설정')]")
+                            if any(c.is_displayed() for c in content):
+                                popup_opened = True
+                                break
+                        if popup_opened:
                             print("✅ 발행 팝업 레이어가 성공적으로 열렸습니다.")
                             break
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        print(f"  - 클릭 방식 {i+1} 실패: {e}")
                         
                 if not popup_opened:
                     print("⚠️ 발행 팝업 레이어의 내부 요소를 찾지 못했습니다. 팝업이 열리지 않았거나 구조가 다를 수 있습니다.")
