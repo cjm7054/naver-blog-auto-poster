@@ -14,5 +14,7 @@
     "#정보공유"
   ],
   "id": 22,
-  "status": "pending"
+  "status": "published",
+  "published_at": "2026-09-27 13:23:45",
+  "adpost_validated": true
 }
